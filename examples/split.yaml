@@ -1,0 +1,31 @@
+# clawkit 双机模式配置示例
+# OpenClaw + Controller 在 A 机器，Worker + OpenCode 在 B 机器
+
+# 部署模式
+mode: split
+
+# A 机器配置
+machine_a:
+  # OpenClaw 配置（占位）
+  openclaw:
+    # 待补充
+  
+  # Controller 配置（占位）
+  controller:
+    # 待补充
+
+# B 机器配置
+machine_b:
+  # OpenCode 配置（占位）
+  opencode:
+    # 待补充
+  
+  # Worker 配置（占位）
+  worker:
+    # 待补充
+
+# 通信配置（占位）
+communication:
+  # 待补充
+
+# 注意：当前为项目初始化阶段，配置项仅为占位，不包含实际配置

@@ -1,0 +1,7 @@
+{
+  "name": "@clawkit/templates",
+  "version": "0.1.0",
+  "description": "clawkit 配置模板",
+  "main": "index.js",
+  "scripts": {}
+}

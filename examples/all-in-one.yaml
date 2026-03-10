@@ -1,0 +1,23 @@
+# clawkit 单机模式配置示例
+# 所有组件运行在同一台机器上
+
+# 部署模式
+mode: all-in-one
+
+# OpenClaw 配置（占位）
+openclaw:
+  # 待补充
+
+# OpenCode 配置（占位）
+opencode:
+  # 待补充
+
+# Controller 配置（占位）
+controller:
+  # 待补充
+
+# Worker 配置（占位）
+worker:
+  # 待补充
+
+# 注意：当前为项目初始化阶段，配置项仅为占位，不包含实际配置
