@@ -1,5 +1,5 @@
 profile:
-  name: local-studio
+  name: ui-quick-local
   version: 1.0.0
   topology: all-in-one
 nodes:

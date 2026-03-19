@@ -1,31 +1,80 @@
-# clawkit 双机模式配置示例
-# OpenClaw + Controller 在 A 机器，Worker + OpenCode 在 B 机器
+profile:
+  name: "split-production"
+  version: "1.0.0"
+  topology: "split"
+  description: "控制面与执行面分离，适合稳定的远程执行环境"
 
-# 部署模式
-mode: split
+nodes:
+  control-plane:
+    type: "ssh"
+    host: "10.10.0.10"
+    port: 22
+    user: "clawkit"
+    keyPath: "~/.ssh/prod-control"
+    workDir: "/srv/clawkit/control"
+  exec-node:
+    type: "ssh"
+    host: "10.10.0.21"
+    port: 22
+    user: "clawkit"
+    keyPath: "~/.ssh/prod-worker"
+    workDir: "/srv/clawkit/worker"
 
-# A 机器配置
-machine_a:
-  # OpenClaw 配置（占位）
-  openclaw:
-    # 待补充
-  
-  # Controller 配置（占位）
+services:
   controller:
-    # 待补充
+    node: "control-plane"
+    port: 8080
+    apiPrefix: "/api"
+  openClaw:
+    node: "control-plane"
+    publicUrl: "https://openclaw.prod.example.com"
 
-# B 机器配置
-machine_b:
-  # OpenCode 配置（占位）
-  opencode:
-    # 待补充
-  
-  # Worker 配置（占位）
-  worker:
-    # 待补充
+workers:
+  - id: "worker-prod-1"
+    node: "exec-node"
+    connectMode: "pull"
+    tags:
+      - "prod"
+      - "backend"
+    projects:
+      - key: "api-service"
+        repoPath: "/srv/projects/api-service"
+        baseBranch: "main"
+        openCode:
+          port: 9921
+          agent: "build"
+          mode: "default"
+      - key: "worker-dashboard"
+        repoPath: "/srv/projects/worker-dashboard"
+        baseBranch: "release"
+        openCode:
+          port: 9922
+          agent: "build"
+          mode: "default"
 
-# 通信配置（占位）
-communication:
-  # 待补充
+runtime:
+  promptEngine:
+    mode: "template"
+  memory:
+    enabled: true
+    provider: "postgres"
+    url: "postgresql://clawkit:***@10.10.0.10:5432/clawkit"
 
-# 注意：当前为项目初始化阶段，配置项仅为占位，不包含实际配置
+notify:
+  enabled: true
+  channels:
+    - "email"
+    - "webhook"
+  webhook: "https://hooks.example.com/clawkit/prod"
+  email:
+    smtp: "smtp.example.com"
+    from: "clawkit@example.com"
+    to:
+      - "ops@example.com"
+
+deploy:
+  timeout: 900
+  retryCount: 5
+  healthCheck:
+    enabled: true
+    interval: 90
