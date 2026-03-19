@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
     "target": "ES2022",
     "module": "commonjs",
     "lib": ["ES2022"],
@@ -9,6 +10,10 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
+    "declaration": true,
+    "paths": {
+      "@clawkit/cli/services": ["packages/cli/services.d.ts"]
+    },
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

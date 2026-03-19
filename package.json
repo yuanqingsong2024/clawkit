@@ -8,7 +8,10 @@
     "clean": "pnpm -r clean",
     "dev": "pnpm -r dev",
     "lint": "pnpm -r lint",
-    "test": "pnpm -r test"
+    "test": "pnpm -r --if-present test",
+    "quickstart": "./scripts/quick-start.sh",
+    "quickstart:dev": "./scripts/quick-start-dev.sh",
+    "smoke": "./scripts/smoke-test.sh"
   },
   "keywords": [
     "openclaw",
@@ -21,6 +24,10 @@
     "pnpm": ">=8.0.0"
   },
   "packageManager": "pnpm@8.15.0",
+  "dependencies": {
+    "@opencode-ai/sdk": "^1.2.24",
+    "yaml": "^2.8.2"
+  },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "typescript": "^5.3.3"
