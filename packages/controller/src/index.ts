@@ -1,24 +1,71 @@
-/**
- * Controller 服务入口
- * 负责任务调度和节点管理
- * 当前仅为骨架，不包含实际业务逻辑
- */
+import type { FastifyInstance } from 'fastify';
+
+import { buildHttpServer } from './http/server';
 
 export class Controller {
-  /**
-   * 启动控制器服务
-   */
+  private app: FastifyInstance | null = null;
+
   async start(): Promise<void> {
-    console.log('Controller 服务启动中...');
-    console.log('当前为初始化阶段，无实际业务逻辑');
+    const host = process.env.CONTROLLER_HOST ?? '0.0.0.0';
+    const portText = process.env.CONTROLLER_PORT ?? '8787';
+    const port = Number.parseInt(portText, 10);
+
+    if (Number.isNaN(port) || port <= 0) {
+      throw new Error(`Controller 启动失败：端口无效 ${portText}`);
+    }
+
+    this.app = await buildHttpServer();
+    await this.app.listen({ host, port });
+    console.log(`Controller HTTP 服务已启动：http://${host}:${port}`);
   }
 
-  /**
-   * 停止控制器服务
-   */
   async stop(): Promise<void> {
-    console.log('Controller 服务停止');
+    if (this.app !== null) {
+      await this.app.close();
+      this.app = null;
+    }
+    console.log('Controller HTTP 服务已停止');
   }
 }
 
+if (require.main === module) {
+  const controller = new Controller();
+  controller.start().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : '未知错误';
+    console.error(`Controller 启动失败：${message}`);
+    process.exit(1);
+  });
+}
+
+export type { BuildPromptDraftInput, PromptEngine } from './services/prompt-engine';
+export type { TaskDraftService } from './services/task-draft-service';
+export { TaskDraftServiceImpl } from './services/task-draft-service';
+export type { TaskMemoryService } from './services/task-memory-service';
+export { TaskMemoryServiceImpl } from './services/task-memory-service';
+export type { PromptCompiler, PromptCompilerInput, CompiledPrompt, OutputContract } from './services/prompt-compiler';
+export { PromptCompilerImpl } from './services/prompt-compiler';
+export { TemplatePromptEngine } from './services/template-prompt-engine';
+export type { PromptDraftService, BuildPromptDraftServiceInput } from './services/prompt-draft-service';
+export { PromptDraftServiceImpl } from './services/prompt-draft-service';
+export type {
+  ControllerFlowService,
+  ControllerFlowServiceDependencies,
+  CreateDraftFromTextResult,
+  GeneratePromptDraftResult,
+  ApproveDraftResult,
+  ApproveDraftInput,
+  ReviseDraftResult,
+  ReviseDraftInput,
+  CancelTaskResult,
+  CancelTaskInput,
+  DraftHistoryResult,
+  DraftHistoryVersionView,
+  TaskStatusSnapshot,
+} from './services/controller-flow-service';
+export { ControllerFlowServiceImpl } from './services/controller-flow-service';
+export * from './models';
+export * from './protocol';
+export { CONTROLLER_TABLES, CONTROLLER_INDEXES, CONTROLLER_SCHEMA_SQL_FILE } from './persistence/tables';
+export { buildHttpServer } from './http/server';
+export { ControllerApiService } from './http/services/controller-api-service';
 export default Controller;
