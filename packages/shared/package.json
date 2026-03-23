@@ -6,8 +6,10 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "lint": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "pnpm build && node tests/run-tests.js"
   },
   "devDependencies": {
     "typescript": "^5.3.3"

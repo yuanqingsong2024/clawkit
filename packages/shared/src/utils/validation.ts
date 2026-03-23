@@ -1,13 +1,9 @@
 import type { ZodIssue } from 'zod';
 
 export function formatValidationIssue(issue: ZodIssue): string {
-  if (issue.message && !issue.message.startsWith('Invalid input')) {
-    return issue.message;
-  }
-
   switch (issue.code) {
     case 'invalid_type':
-      return issue.input === undefined ? '必填字段缺失' : '字段类型不正确';
+      return issue.message.includes('received undefined') ? '必填字段缺失' : '字段类型不正确';
 
     case 'invalid_value':
       return '字段值不在允许范围内';

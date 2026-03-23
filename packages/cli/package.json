@@ -20,6 +20,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "lint": "tsc --noEmit",
     "clean": "rm -rf dist",
     "dev": "tsc --watch",
     "test": "pnpm build && node tests/run-tests.js"
