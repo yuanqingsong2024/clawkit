@@ -34,3 +34,5 @@ Thumbs.db
 .sisyphus/
 data/
 examples/.clawkit/
+.opencode
+.opencode/commands/.gitkeep

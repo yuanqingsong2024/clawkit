@@ -1,280 +1,190 @@
 # clawkit
 
-一键部署、配置并串联 OpenClaw 与 OpenCode 的轻量工具。
+用于串联 OpenClaw、controller、worker 与 OpenCode，并提供最小部署配置能力的轻量 monorepo 工具集。
 
----
+clawkit 当前提供两条并行主线：一条是以 `clawkit` CLI 为入口的配置生成、诊断、部署预览与最小落地；另一条是围绕 controller / worker 建立的任务接入、草稿确认、派发执行与结果回传链路。仓库目标不是实现完整生产管理平台，而是把首个 MVP 所需的最小主链路收敛到可安装、可配置、可验证的状态。
 
-> ## ⚠️ 重要验收边界说明
-> 
-> **当前版本（v0.1.1）已支持 controller 核心状态 SQLite 持久化，适合持续试运行，但仍存在部分运行态刷新边界。**
-> 
-> ### 关键限制
-> 
-> 1. **默认 E2E 验证 ≠ 真实 OpenCode 执行验证**
->    - `node ./scripts/e2e-local-demo.js` 默认允许 **placeholder fallback**
->    - 它只能证明**链路打通**，不能证明**真实 OpenCode 执行能力已验收**
->    - 若要验证真实执行，必须：
->      - 本机启动 `opencode serve`
->      - 关闭 `WORKER_PLACEHOLDER_FALLBACK`
->      - 确认 `placeholderExecution=false`
->    - 详见 [docs/e2e.md](./docs/e2e.md)
-> 
-> 2. **Controller 核心状态已持久化，但仍建议明确配置数据库路径**
->    - 任务、草稿、提示草稿、审批记录已接入 **SQLite 持久化**
->    - **Controller 重启后可恢复已创建任务与相关草稿状态**
->    - 默认数据库路径为 `data/clawkit.db`
->    - 可通过 `CONTROLLER_DB_PATH` 自定义数据库路径
-> 
-> 3. **Manifest 保存后仍需手动重启**
->    - Web Console 保存 manifest 后，配置不会自动生效
->    - 需要手动重启 controller/worker 进程
-> 
-> 完整限制说明见 [docs/known-limitations.md](./docs/known-limitations.md)
+## 当前范围
 
----
+当前仓库已覆盖的主能力：
 
-## 项目状态
+- `clawkit init / doctor / plan / apply / heal` CLI 主命令
+- manifest 校验与部署拓扑描述
+- OpenClaw webhook 接入与任务协议识别
+- TaskDraft / TaskMemory / PromptDraft / 审批状态流转
+- approved 任务派发、worker 选择与执行结果回传
+- controller HTTP 服务、任务流转相关服务与 SQLite 持久化
+- worker 注册、心跳、拉取任务、回传结果
+- OpenCode 执行链路，以及本地联调用的 placeholder fallback
+- 轻量 Web Console（总览、配置、部署、修复、状态、任务中心）
+- Setup 向导（预设选择 + YAML 编辑 + 编排执行）
+- 单机、混合、双机三类示例配置
 
-**当前阶段：最终验收与发布收口阶段**
+当前阶段明确不做的事情：
 
-当前仓库已具备首个 MVP 所需的最小主链路：
+- 复杂 Web 管理后台
+- 自动 PR 或自动发布业务代码
+- controller 侧真实模型推理
+- 超出最小链路范围的复杂远程编排
 
-- ✅ 项目初始化与 manifest 校验
-- ✅ `clawkit init / doctor / plan / apply / heal`
-- ✅ controller 草稿、记忆、审批流与 HTTP API
-- ✅ OpenClaw webhook 接入与 token 鉴权
-- ✅ worker 注册、心跳、pull、result 回传
-- ✅ OpenCodeExecutor 真实执行主链路（SDK / CLI 双路径）
-- ✅ 单机模式最小链路联调
-- ✅ 混合模式最小部署说明
-- ✅ Web Console（页面、API、生产静态文件托管）
-- ✅ Setup 向导（预设选择 + YAML 编辑 + 一键执行流程 + 实时状态显示）
+## 仓库结构
 
-当前阶段明确不做：
+这是一个 pnpm workspace monorepo，工作区定义在 `packages/*`。
 
-- ❌ 复杂 Web 管理后台能力
-- ❌ 自动 PR
-- ❌ 自动部署生产业务代码
-- ❌ controller 侧真实模型推理
-- ❌ 复杂远程环境编排
+### 核心包
 
-当前阶段需要注意的边界：
+- `packages/cli`：命令行入口，提供 `init / doctor / plan / apply / heal`
+- `packages/shared`：共享 schema、接口、类型与校验工具
+- `packages/controller`：控制器服务，负责 webhook 接入、草稿/审批流、派发编排、HTTP 服务与持久化
+- `packages/worker`：工作节点，负责注册、心跳、拉取任务、执行任务与结果上报
+- `packages/web`：轻量 Web Console，包含页面、前端路由与构建产物
+- `packages/templates`：模板位目录；当前不维护独立静态模板文件，部署文件由 CLI 在运行时生成
 
-- 单机 E2E 脚本当前默认允许 `placeholder fallback`，适合验证链路打通。
-- 若要严格验证真实 OpenCode 执行，需本机先启动 OpenCode server，并关闭 `WORKER_PLACEHOLDER_FALLBACK`。
-- Controller 默认启用 SQLite 持久化；如需关闭，可设置 `CONTROLLER_ENABLE_PERSISTENCE=false`。
-- Controller 默认数据库路径为 `data/clawkit.db`；如需自定义，可设置 `CONTROLLER_DB_PATH=/your/path/clawkit.db`。
+### 其他目录
 
-## 项目简介
+- `docs/`：详细设计、联调、部署、限制与验收文档
+- `examples/`：`all-in-one`、`hybrid`、`split` 示例 manifest
+- `scripts/`：快速启动、联调、清理与烟雾测试脚本
 
-clawkit 旨在简化 OpenClaw 与 OpenCode 的部署与配置流程，支持三种部署拓扑：
+## 支持的部署拓扑
 
-1. **单机模式（all-in-one）**：OpenClaw、controller、worker、OpenCode 在同一台机器
-2. **混合模式（hybrid）**：OpenClaw + controller 在云端，worker + OpenCode 在本地
-3. **双机模式（split）**：OpenClaw + controller 在 A 机器，worker + OpenCode 在 B 机器
+clawkit 围绕同一套 manifest 支持三种基础拓扑：
 
-## 技术栈
+1. `all-in-one`：OpenClaw、controller、worker、OpenCode 部署在同一台机器
+2. `hybrid`：OpenClaw + controller 在云端，worker + OpenCode 在本地
+3. `split`：OpenClaw + controller 在 A 机器，worker + OpenCode 在 B 机器
 
-- TypeScript（CommonJS，target ES2022）
-- Node.js 20+
-- pnpm workspace（monorepo）
-- Zod（schema 校验）
-- Commander（CLI 框架）
-- chalk v4（终端着色）
+对应示例见：
 
-## CLI 命令
+- `examples/all-in-one.yaml`
+- `examples/hybrid.yaml`
+- `examples/split.yaml`
 
-| 命令 | 状态 | 说明 |
-|---|---|---|
-| `clawkit init` | ✅ 可用 | 交互式生成 `clawkit.yaml`，支持拓扑选择，并默认产出 template 模式配置 |
-| `clawkit doctor` | ✅ 可用 | 诊断配置文件和环境（文件/YAML/Schema/Node.js/pnpm/路径/端口/SSH；输出条目随配置而变） |
-| `clawkit plan` | ✅ 可用 | 读取 manifest，展示 dry-run 执行计划 |
-| `clawkit apply` | ✅ 可用 | 最小真实部署写入、备份、systemd 文件与启动脚本生成 |
-| `clawkit heal` | ✅ 可用 | 结构化诊断、修复计划与部分自动修复 |
+这里的“支持”指 manifest、CLI 与示例配置层面的支持；如果从 Web Setup 向导入口进入，当前内置预设只有 `all-in-one` 和 `hybrid`，`split` 需要通过 YAML 手动编辑。
 
-详细文档见 [docs/cli.md](./docs/cli.md)。
+## 核心链路
 
-## 目录结构
+从整体功能看，clawkit 当前最重要的不是单独某个命令，而是下面这条最小闭环：
 
-```
-clawkit/
-├── packages/
-│   ├── cli/                 # 命令行工具（✅ 已实现 init/doctor/plan/apply/heal）
-│   │   └── src/
-│   │       ├── commands/    # 命令定义
-│   │       ├── services/    # 业务逻辑（InitService/DoctorServiceImpl/PlanServiceImpl）
-│   │       └── utils/       # 工具（logger、prompt）
-│   ├── shared/              # 共享代码（✅ 已实现 schema/接口/类型）
-│   │   └── src/
-│   │       ├── schema/      # Zod schema 定义
-│   │       ├── interfaces/  # 接口定义（DoctorService/PlanService）
-│   │       ├── types/       # 类型定义（Manifest/RenderInput）
-│   │       └── utils/       # 工具函数（校验格式化）
-│   ├── controller/          # 控制器服务（✅ 协议解析、状态机、HTTP API、OpenClaw 接入）
-│   │   └── src/
-│   │       ├── models/      # 数据模型（TaskDraft/TaskMemory/PromptDraft/ApprovalRecord）
-│   │       ├── protocol/    # 协议解析与识别
-│   │       ├── services/    # 服务层（TaskDraftService/TaskMemoryService/PromptEngine）
-│   │       └── persistence/ # 持久化（SQLite schema）
-│   ├── worker/              # 工作节点（✅ 注册、心跳、pull、result、OpenCodeExecutor）
-│   ├── web/                 # Web Console（✅ 页面、路由、API 调用、构建产物）
-│   └── templates/           # 配置模板与说明
-├── docs/                    # 项目文档
-│   ├── cli.md               # CLI 使用文档
-│   ├── doctor.md            # Doctor 诊断文档
-│   ├── manifest.md          # Manifest 设计文档
-│   ├── architecture.md      # 架构设计
-│   ├── roadmap.md           # 开发路线图
-│   ├── web-console.md       # Web Console 使用与部署说明
-│   ├── e2e.md               # 端到端联调说明
-│   ├── release-acceptance.md # 发布验收文档
-│   ├── minimal-user-guide.md # 最小使用手册
-│   ├── release-notes-v0.1.0-draft.md # 首发说明草稿
-│   └── project-scope.md     # 项目范围
-├── examples/                # 示例配置
-│   ├── all-in-one.yaml      # 单机模式示例
-│   ├── hybrid.yaml          # 混合模式示例
-│   └── split.yaml           # 双机模式示例
-├── scripts/                 # 构建脚本
-└── AGENTS.md                # AI 协作规则
-```
+1. OpenClaw 通过 webhook 把研发任务文本发送给 controller
+2. controller 识别任务协议，创建 `TaskDraft`、`TaskMemory` 与 `PromptDraft`
+3. 任务进入等待确认状态，支持修改草案、确认派发、取消任务、查询状态
+4. 已确认任务由 controller 派发给可用 worker
+5. worker 拉取任务后调用 OpenCode 或 placeholder executor 执行
+6. 执行结果回传 controller，并以摘要形式返回给调用侧
 
-## 本地开发
+如果只把仓库理解成“部署配置工具”，会低估 controller / worker 这部分已经存在的任务主链路能力。
+
+## 快速开始
 
 ### 环境要求
 
 - Node.js >= 20.0.0
 - pnpm >= 8.0.0
 
-### 安装依赖
+### 安装与构建
 
 ```bash
 pnpm install
-```
-
-### 构建
-
-```bash
 pnpm build
 ```
 
-### 运行测试
+### 常用命令
 
 ```bash
-pnpm test
-```
+# 查看 CLI 帮助
+node ./packages/cli/dist/index.js --help
 
-### 使用 CLI
-
-```bash
-# 交互式初始化配置
+# 初始化 manifest
 node ./packages/cli/dist/index.js init
 
-# 诊断配置文件
+# 诊断示例配置
 node ./packages/cli/dist/index.js doctor -f ./examples/all-in-one.yaml
 
-# 查看执行计划
+# 预览部署计划
 node ./packages/cli/dist/index.js plan -f ./examples/all-in-one.yaml
 
 # 预览最小部署写入
 node ./packages/cli/dist/index.js apply -f ./examples/all-in-one.yaml --dry-run
 
-# 诊断与修复计划
+# 生成诊断与修复计划
 node ./packages/cli/dist/index.js heal -f ./examples/all-in-one.yaml --dry-run
 ```
 
-## 最小运行步骤
+### 快速脚本
 
-### 1. 生成或准备 manifest
-
-可直接使用：
-
-- `examples/all-in-one.yaml`
-- `examples/hybrid.yaml`
-- `examples/split.yaml`
-
-### 2. 构建项目
+根目录已提供便于试运行和联调的脚本：
 
 ```bash
-pnpm install
+pnpm quickstart
+pnpm quickstart:dev
+pnpm smoke
+```
+
+脚本详细说明见 [`scripts/README.md`](./scripts/README.md)。
+
+## 最小联调路径
+
+如果只是验证链路是否打通，可以按下面的最小路径开始：
+
+1. 选择或生成一个 manifest，例如 `examples/all-in-one.yaml`
+2. 执行 `pnpm install && pnpm build`
+3. 使用 `plan` 或 `apply --dry-run` 检查部署结果
+4. 运行 `node ./scripts/e2e-local-demo.js` 做本地最小联调
+
+这条路径默认允许 placeholder fallback，因此它证明的是“任务链路可跑通”，不是“真实 OpenCode 执行环境已经验收完成”。
+
+## 关键边界
+
+使用仓库前需要明确这几个边界：
+
+1. `e2e-local-demo.js` 默认允许 placeholder fallback，更适合做链路验证。
+2. 若要验证真实 OpenCode 执行，需要先准备 `opencode serve` 相关环境，并关闭 `WORKER_PLACEHOLDER_FALLBACK`。
+3. controller 已接入 SQLite 持久化，默认数据库路径为 `data/clawkit.db`，也可通过环境变量覆盖。
+4. `packages/templates/` 当前是模板位目录，最小部署文件由 CLI 运行时生成，而不是从静态模板直接拷贝。
+5. Web Console 是轻量控制台，Setup 当前主要是“预设 + YAML 编辑 + 编排执行”，尚不是逐字段完整表单式向导。
+6. README 描述的是仓库当前实际能力范围；如果与历史阶段性规则文档有差异，应以当前代码与 docs 中的现状为准理解。
+
+更完整的限制说明见 [`docs/known-limitations.md`](./docs/known-limitations.md)。
+
+## 文档索引
+
+按使用场景建议优先阅读这些文档：
+
+- [`docs/quick-start.md`](./docs/quick-start.md)：一键部署与快速上手
+- [`docs/cli.md`](./docs/cli.md)：CLI 命令说明
+- [`docs/manifest.md`](./docs/manifest.md)：manifest 结构与字段说明
+- [`docs/project-scope.md`](./docs/project-scope.md)：当前版本做什么、不做什么与 MVP 边界
+- [`docs/e2e.md`](./docs/e2e.md)：本地联调与真实 OpenCode 执行验证
+- [`docs/web-console.md`](./docs/web-console.md)：Web Console 与 Setup 向导
+- [`docs/controller-api.md`](./docs/controller-api.md)：controller HTTP API
+- [`docs/openclaw-webhook.md`](./docs/openclaw-webhook.md)：OpenClaw webhook 接入与交互协议
+- [`docs/controller-flow.md`](./docs/controller-flow.md)：controller 内部草稿与审批闭环
+- [`docs/dispatch-flow.md`](./docs/dispatch-flow.md)：任务派发、执行与结果回写链路
+- [`docs/worker.md`](./docs/worker.md)：worker 设计与运行说明
+
+## 开发说明
+
+常用工作区命令：
+
+```bash
 pnpm build
-```
-
-### 3. 预览部署结果
-
-```bash
-node ./packages/cli/dist/index.js apply -f ./examples/all-in-one.yaml --dry-run
-```
-
-### 4. 启动单机最小链路
-
-如果只验证链路是否打通，可直接运行：
-
-```bash
-node ./scripts/e2e-local-demo.js
-```
-
-如果要严格验证真实 OpenCode 执行，请参考 [`docs/e2e.md`](./docs/e2e.md)。
-
-## 错误处理说明
-
-当前阶段的错误处理原则：
-
-- webhook token 缺失或错误：返回明确 401 / 503 中文错误
-- 任务协议不合法：返回结构化中文错误码与字段说明
-- worker / project 不可用：返回清晰的派发失败原因
-- OpenCode 不可达：返回结构化失败结果，并提示 `opencode serve` 启动方式
-- `heal` 只自动修复本地生成文件，不擅自做远程高风险操作
-
-详细说明见：
-
-- [`docs/openclaw-webhook.md`](./docs/openclaw-webhook.md)
-- [`docs/heal.md`](./docs/heal.md)
-- [`docs/executor.md`](./docs/executor.md)
-- [`docs/e2e.md`](./docs/e2e.md)
-
-### 清理
-
-```bash
+pnpm test
+pnpm lint
 pnpm clean
 ```
 
-## 文档
+如果需要进入某个包单独处理，可查看对应 `package.json` 中的脚本定义，例如：
 
-- [CLI 使用文档](./docs/cli.md) — 命令详细说明与输出示例
-- [Doctor 诊断文档](./docs/doctor.md) — 诊断检查项与报告格式
-- [Manifest 设计文档](./docs/manifest.md) — 配置结构、字段说明、拓扑约束
-- [Web Console 文档](./docs/web-console.md) — Web 界面能力、启动方式与生产静态托管
-- [Setup 向导文档](./docs/setup-wizard.md) — 一键配置与部署流程使用说明
-- [端到端联调说明](./docs/e2e.md) — 链路联调与真实 OpenCode 执行联调边界
-- [发布验收文档](./docs/release-acceptance.md) — 首个版本发布判断依据
-- [最小使用手册](./docs/minimal-user-guide.md) — 环境准备、启动步骤与常见问题
-- [v0.1.0 首发说明草稿](./docs/release-notes-v0.1.0-draft.md) — 首个版本发布说明草稿
-- [架构设计](./docs/architecture.md) — 系统架构
-- [开发路线图](./docs/roadmap.md) — 阶段规划
+- `packages/cli/package.json`
+- `packages/controller/package.json`
+- `packages/worker/package.json`
+- `packages/web/package.json`
 
-## 当前发布结论
+## 语言与协作约定
 
-从当前代码、测试与文档状态看，仓库已经满足**首个可发布 MVP**的主要条件。
+本仓库默认使用中文编写说明、注释与文档。协作前请先阅读：
 
-已验证证据：
+- [`AGENTS.md`](./AGENTS.md)
 
-- `pnpm build` 通过
-- `pnpm test` 通过
-- `node ./scripts/e2e-local-demo.js` 通过（链路验证）
-
-发布前仍需关注：
-
-- 当前运行环境若低于 Node.js 20，会出现 engine warning
-- 严格真实 OpenCode 执行联调需要本机额外准备 OpenCode server 环境
-- 当前仓库尚未声明正式开源许可证；若计划公开开源发布，建议先补充 `LICENSE`
-
-## 许可证
-
-当前仓库尚未声明正式开源许可证。
-
-如果首版发布是内部 MVP，可先按当前状态发布；如果要公开开源发布，建议在发布前补充 `LICENSE` 文件。
-
-## 贡献
-
-欢迎贡献！请先阅读 [AGENTS.md](./AGENTS.md) 了解协作规则。
+英文入口说明见 [`README.en.md`](./README.en.md)。
