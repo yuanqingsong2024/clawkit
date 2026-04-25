@@ -156,21 +156,48 @@ feat(cli): 添加 init 命令
 - 不要修改不相关的代码
 - 不要删除现有功能（除非明确要求）
 
-## 当前阶段限制
+## 项目阶段与范围
 
-**第一阶段：项目初始化**
+### 已完成阶段
 
-允许：
-- 创建目录结构
-- 配置构建工具
-- 编写基础文档
-- 创建最小骨架代码
+**第一阶段：项目初始化**（已完成）
 
-禁止：
-- 实现业务逻辑
-- 添加复杂依赖
-- 创建 Web UI
-- 实现权限系统
+- ✅ 创建目录结构
+- ✅ 配置构建工具
+- ✅ 编写基础文档
+- ✅ 创建最小骨架代码
+
+**第二阶段：MVP 主链路实现**（已完成）
+
+- ✅ controller / worker 任务派发与执行链路
+- ✅ OpenClaw webhook 接入与协议解析
+- ✅ TaskDraft / TaskMemory / PromptDraft 草稿与审批流
+- ✅ Web Console 轻量控制台
+- ✅ SQLite 持久化
+- ✅ OpenCode 执行链路（含 placeholder fallback）
+- ✅ 三种拓扑示例配置与最小部署能力
+
+### 当前阶段范围
+
+**当前版本包含**：
+
+- manifest schema 与三种拓扑示例（all-in-one / hybrid / split）
+- CLI：`init / doctor / plan / apply / heal`
+- controller：任务协议解析、草稿审批、HTTP API、webhook 接入、派发编排
+- worker：注册、心跳、拉取任务、执行任务、结果回传
+- Web Console：总览、配置、部署、修复、状态、任务中心、Setup 向导
+- 本地 E2E 联调脚本与最小部署自动化
+
+**当前版本明确不做**（不是缺陷）：
+
+- 复杂 Web 管理后台能力
+- 自动 PR 或自动部署生产业务代码
+- 复杂远程环境编排
+- 多 worker 复杂调度与 push 模式派发
+- 复杂权限系统
+- controller 侧真实大模型生成 Prompt
+
+详细范围说明请参考 [`docs/project-scope.md`](./docs/project-scope.md)。
 
 ## 问题处理
 
