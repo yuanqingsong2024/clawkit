@@ -156,26 +156,72 @@ pnpm --filter @clawkit/worker start
 
 ---
 
-## 5. 常见失败与判断方法
+## 5. 双机模式（Split）联调
 
-### 5.1 OpenClaw token 未配置
+### 5.1 当前阶段支持范围
+
+双机模式当前阶段的目标是：
+
+- controller 与 OpenClaw 部署在 A 节点（控制平面）
+- worker 与 OpenCode 部署在 B 节点（执行节点）
+- `apply` 负责最小文件写入到两个 SSH 节点
+- 远程节点的代码同步、systemd 安装与服务启动仍需人工完成
+
+### 5.2 推荐验证顺序
+
+1. 使用 `examples/split.yaml` 执行 `clawkit doctor` 验证配置
+2. 执行 `clawkit apply --dry-run` 预览将要生成的文件
+3. 在控制平面节点（A）确认已写入 `controller.env`、`openclaw.json` 与 controller service 文件
+4. 在执行节点（B）确认已写入 worker env、OpenCode launch 文件
+5. 手工完成两个节点的代码同步与 service 安装
+6. 在执行节点（B）启动 `opencode serve`
+7. 在执行节点（B）启动 worker，确保 `CONTROLLER_URL` 指向控制平面节点
+8. 在控制平面节点（A）启动 controller
+9. 从 OpenClaw 或 curl 向控制平面 controller webhook 发起任务
+
+### 5.3 当前阶段通过标准
+
+满足以下条件即可认定"双机模式联调说明已具备 MVP 可用度"：
+
+- examples 提供完整示例配置（`examples/split.yaml`）
+- `doctor` 能正确识别双 SSH 节点配置
+- `apply` 文档明确说明两个节点的文件分布
+- 文档明确说明哪些步骤自动完成、哪些步骤需要人工完成
+
+### 5.4 与混合模式的区别
+
+| 维度 | 混合模式（Hybrid） | 双机模式（Split） |
+|------|-------------------|------------------|
+| controller 位置 | 云端 SSH 节点 | 云端 SSH 节点 A |
+| worker 位置 | 本地节点 | 云端 SSH 节点 B |
+| OpenCode 位置 | 本地节点 | 云端 SSH 节点 B |
+| 网络要求 | 本地能访问云端 controller | 节点 B 能访问节点 A |
+| 适用场景 | 本地开发，云端管理 | 完全云端部署，控制与执行分离 |
+
+> 当前阶段并未提供"一键双机模式联调脚本"，这是有意保留的边界，而不是遗漏实现。
+
+---
+
+## 6. 常见失败与判断方法
+
+### 6.1 OpenClaw token 未配置
 
 现象：webhook 返回 401 或 503。
 
 处理：检查 `OPENCLAW_WEBHOOK_TOKEN` 与请求头 `Authorization: Bearer <token>`。
 
-### 5.2 worker 已启动但拉不到任务
+### 6.2 worker 已启动但拉不到任务
 
 现象：worker 持续心跳，但 `pull` 一直返回 `hasTask=false`。
 
 处理：检查任务是否已经进入 `approved/dispatched`，以及 worker 是否支持对应 `projectKey`。
 
-### 5.3 OpenCode 不可达
+### 6.3 OpenCode 不可达
 
 现象：任务失败，错误摘要提示 `opencode serve`。
 
 处理：检查 `OPENCODE_SERVER_BASE_URL`、端口、用户名/密码环境变量与 fallback 配置。
 
-### 5.4 为什么 E2E 通过但不算真实执行通过
+### 6.4 为什么 E2E 通过但不算真实执行通过
 
 因为当前内置 demo 脚本允许 placeholder fallback。它只能证明“链路打通”，不能替代“真实 OpenCode 环境可用”的严格验收。
