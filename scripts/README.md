@@ -83,6 +83,12 @@ pnpm smoke
 - `--smoke-test`：部署后自动执行烟雾测试
 - `-h, --help`：显示帮助信息
 
+**manifest 路径同步说明**：
+
+- 脚本在启动前会把当前使用的 manifest 路径同步写入 `data/controller-config.json`
+- 这样可以保证脚本本次指定的 manifest 与 controller 实际读取的路径一致
+- 如果此前在页面里保存过其他 manifest 路径，本次脚本启动会以脚本指定路径为准
+
 ### quick-start-dev.sh（开发环境）
 
 **用途**：本地开发环境快速启动，适合频繁调试。
@@ -98,6 +104,7 @@ pnpm smoke
 - 服务在前台运行，按 `Ctrl+C` 停止
 - 适合开发调试，不适合生产部署
 - 启动速度快，无需额外配置
+- 启动前会同步 `data/controller-config.json`，确保 controller 使用当前脚本指定的 manifest 路径
 
 ### smoke-test.sh（烟雾测试）
 
@@ -157,6 +164,8 @@ export OPENCODE_SERVER_PASSWORD="your-password"
 
 > 说明：真实执行模式需要先手动启动 `opencode serve`，并确保 `OPENCODE_SERVER_PASSWORD_ENV` 对应的环境变量已设置。
 
+> 补充说明：`start-local.sh` 也会在启动前同步 `data/controller-config.json`，避免页面保存的旧路径覆盖这次命令指定的 manifest。
+
 ## 常见问题
 
 ### 环境检查失败
@@ -207,4 +216,3 @@ pkill -f clawkit
 - [CLI 使用文档](../docs/cli.md) - 命令详细说明
 - [端到端联调说明](../docs/e2e.md) - 链路联调与真实 OpenCode 执行
 - [最小使用手册](../docs/minimal-user-guide.md) - 环境准备和启动步骤
-

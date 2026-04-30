@@ -257,6 +257,13 @@ server {
 3. 重启 worker 进程
 4. 重启 OpenCode 服务（如端口或路径变更）
 
+### manifest 路径配置
+
+- 仍支持通过 `CLAWKIT_MANIFEST_PATH` 在 controller 启动前指定 manifest 文件。
+- Web Console「配置」页现在也支持保存 manifest 路径。
+- 页面保存的路径会持久化到 `data/controller-config.json`，并优先于 `CLAWKIT_MANIFEST_PATH` 生效。
+- 保存路径后 controller 会立即切换读取目标；worker 仍需手动重启以同步运行配置。
+
 ### Apply/Heal 的副作用
 
 - `doctor` 和 `plan` 是只读操作，可随时执行

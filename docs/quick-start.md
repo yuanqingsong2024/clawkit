@@ -86,6 +86,17 @@ pnpm quickstart
 | `--smoke-test` | 部署后自动执行烟雾测试 | 否 |
 | `-h, --help` | 显示帮助信息 | - |
 
+### manifest 路径同步行为
+
+执行 `quick-start.sh` 启动服务时，脚本会在启动前把本次使用的 manifest 路径同步写入 `data/controller-config.json`。
+
+这样做的目的是：
+
+1. 保证脚本 `-f` 指定的 manifest 就是 controller 本次实际读取的 manifest
+2. 避免页面此前保存的旧 manifestPath 优先级更高，导致脚本参数与实际运行不一致
+
+如果你此前在 Web Console 配置页里保存过其他 manifest 路径，本次执行脚本后，会以脚本指定路径为准。
+
 ### 环境变量
 
 | 变量 | 说明 | 默认值 |
@@ -94,6 +105,47 @@ pnpm quickstart
 | `CONTROLLER_URL` | Controller 地址 | `http://127.0.0.1:8787` |
 | `WORKER_ID` | Worker ID | `local-worker` |
 | `WORKER_SUPPORTED_PROJECTS` | 支持的项目 key | `clawkit` |
+
+### OpenClaw webhook token 配置
+
+推荐在 manifest 中配置 `services.openClaw.apiKey`，`apply` 会把它写入 controller 的 `OPENCLAW_WEBHOOK_TOKEN` 与 OpenClaw webhook 配置：
+
+```yaml
+services:
+  openClaw:
+    node: local-dev
+    publicUrl: http://127.0.0.1:8787
+    apiKey: replace-me
+```
+
+`replace-me` 只是示例占位值，正式使用前请替换为随机字符串。可以用下面的命令生成：
+
+```bash
+openssl rand -hex 32
+```
+
+如果不在 manifest 中配置 `apiKey`，一键部署脚本会临时使用 `OPENCLAW_WEBHOOK_TOKEN=replace-me`，仅适合本地测试。
+
+### 模型供应商与默认模型配置
+
+Web Console 的 Setup 向导支持配置 Prompt 引擎模式、模型供应商、API Key 环境变量和默认模型。选择 `llm` 或 `hybrid` 后，可以临时输入 API Key 获取供应商模型列表，再选择默认模型。
+
+生成的 manifest 只保存环境变量名，不保存 API Key 明文：
+
+```yaml
+runtime:
+  promptEngine:
+    mode: llm
+    provider: openai
+    apiKeyEnv: OPENAI_API_KEY
+    model: gpt-4o-mini
+```
+
+启动服务前需要在运行环境中设置对应环境变量：
+
+```bash
+export OPENAI_API_KEY="***"
+```
 
 ### 输出示例
 
@@ -193,6 +245,7 @@ pnpm quickstart:dev
 - 服务在前台运行，按 `Ctrl+C` 停止
 - 适合开发调试，不适合生产部署
 - 启动速度快，无需额外配置
+- 启动前会同步 `data/controller-config.json`，确保 controller 读取当前脚本指定的 manifest
 
 ### 输出示例
 
