@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+write_controller_config() {
+  local manifest_path="$1"
+  local resolved_manifest_path
+  resolved_manifest_path="$(node -e "console.log(require('node:path').resolve(process.argv[1]))" "$manifest_path")"
+
+  mkdir -p data
+  cat > data/controller-config.json <<EOF
+{
+  "manifestPath": "${resolved_manifest_path}"
+}
+EOF
+
+  echo "已同步 controller manifestPath：${resolved_manifest_path}"
+}
+
 show_usage() {
   cat <<'EOF'
 用法：
@@ -33,6 +48,7 @@ export CLAWKIT_MANIFEST_PATH="${CLAWKIT_MANIFEST_PATH:-$(pwd)/examples/all-in-on
 export CONTROLLER_URL="${CONTROLLER_URL:-http://127.0.0.1:8787}"
 export WORKER_ID="${WORKER_ID:-local-worker}"
 export WORKER_SUPPORTED_PROJECTS="${WORKER_SUPPORTED_PROJECTS:-clawkit}"
+write_controller_config "$CLAWKIT_MANIFEST_PATH"
 
 pnpm build
 
