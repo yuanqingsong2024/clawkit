@@ -17,7 +17,7 @@ export interface ProjectRegistryOptions {
 
 export class ProjectRegistry {
   private readonly projects = new Map<string, ProjectDispatchConfig>();
-  readonly manifestPath: string | null;
+  manifestPath: string | null;
 
   constructor(options: ProjectRegistryOptions = {}) {
     const manifestPath = options.manifestPath ?? process.env.CLAWKIT_MANIFEST_PATH ?? null;
@@ -39,7 +39,6 @@ export class ProjectRegistry {
   }
 
   reload(manifestPath: string): void {
-    this.projects.clear();
     this.loadFromManifest(manifestPath);
   }
 
@@ -60,10 +59,11 @@ export class ProjectRegistry {
     }
 
     const manifest = result.data;
+    const nextProjects = new Map<string, ProjectDispatchConfig>();
 
     for (const worker of manifest.workers) {
       for (const project of worker.projects) {
-        this.projects.set(project.key, {
+        nextProjects.set(project.key, {
           projectKey: project.key,
           repoPath: project.repoPath,
           branchBase: project.baseBranch,
@@ -75,5 +75,11 @@ export class ProjectRegistry {
         });
       }
     }
+
+    this.projects.clear();
+    for (const [projectKey, projectConfig] of nextProjects.entries()) {
+      this.projects.set(projectKey, projectConfig);
+    }
+    this.manifestPath = resolvedPath;
   }
 }

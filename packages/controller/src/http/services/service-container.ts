@@ -12,6 +12,7 @@ import { SetupOrchestrator } from './setup-orchestrator';
 import { SetupRunService } from './setup-run-service';
 import { SetupStreamService } from './setup-stream-service';
 import { WebConsoleService } from './web-console-service';
+import { ControllerConfigService } from './controller-config-service';
 export class ServiceContainer {
   readonly workerRegistry: WorkerRegistry;
   readonly dispatchService: DispatchService;
@@ -20,6 +21,7 @@ export class ServiceContainer {
 
   readonly openClawAdapter: OpenClawAdapter;
 
+  readonly controllerConfigService: ControllerConfigService;
   readonly projectRegistry: ProjectRegistry;
   readonly promptCompiler: PromptCompilerImpl;
   readonly webConsoleService: WebConsoleService;
@@ -45,7 +47,10 @@ export class ServiceContainer {
       taskStore: this.taskStore ?? undefined,
     });
     this.workerRegistry = new WorkerRegistry();
-    this.projectRegistry = new ProjectRegistry();
+    this.controllerConfigService = new ControllerConfigService();
+    this.projectRegistry = new ProjectRegistry({
+      manifestPath: this.controllerConfigService.getConfig().manifestPath ?? undefined,
+    });
     this.promptCompiler = new PromptCompilerImpl();
     this.dispatchService = new DispatchService(
       this.workerRegistry,
@@ -84,6 +89,7 @@ export class ServiceContainer {
       this.apiService,
       this.workerRegistry,
       this.dispatchService,
+      this.controllerConfigService,
       this.projectRegistry,
     );
     this.setupManifestService = new SetupManifestService();

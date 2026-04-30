@@ -29,6 +29,8 @@ import type { ProjectRegistry } from '../../services/project-registry';
 import type { WorkerRegistry } from '../../services/worker-registry';
 import type { TaskListItem } from '../../services/controller-flow-service';
 import type { ControllerApiService } from './controller-api-service';
+import type { ControllerConfigDocument } from './controller-config-service';
+import type { ControllerConfigService } from './controller-config-service';
 import { HttpError } from '../errors/http-error';
 
 export type SystemActionName = 'doctor' | 'plan' | 'apply' | 'heal';
@@ -127,6 +129,7 @@ export class WebConsoleService {
     private readonly apiService: ControllerApiService,
     private readonly workerRegistry: WorkerRegistry,
     private readonly dispatchService: DispatchService,
+    private readonly controllerConfigService: ControllerConfigService,
     private readonly projectRegistry: ProjectRegistry,
   ) {}
 
@@ -197,6 +200,18 @@ export class WebConsoleService {
 
   getManifest(): ManifestDocument {
     return this.requireManifest();
+  }
+
+  getControllerConfig(): ControllerConfigDocument {
+    return this.controllerConfigService.getConfig();
+  }
+
+  saveControllerConfig(manifestPath: string): ControllerConfigDocument {
+    const config = this.controllerConfigService.saveManifestPath(manifestPath);
+    if (config.manifestPath !== null) {
+      this.projectRegistry.reload(config.manifestPath);
+    }
+    return config;
   }
 
   saveManifest(yamlText: string): ManifestDocument {
@@ -577,7 +592,7 @@ export class WebConsoleService {
   }
 
   private getConfiguredManifestPath(): string | null {
-    return this.projectRegistry.manifestPath ?? process.env.CLAWKIT_MANIFEST_PATH ?? null;
+    return this.controllerConfigService.getConfig().manifestPath;
   }
 
   private requireManifestPath(): string {
