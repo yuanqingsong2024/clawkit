@@ -15,10 +15,11 @@ clawkit 当前提供两条并行主线：一条是以 `clawkit` CLI 为入口的
 - approved 任务派发、worker 选择与执行结果回传
 - controller HTTP 服务、任务流转相关服务与 SQLite 持久化
 - worker 注册、心跳、拉取任务、回传结果
-- OpenCode 执行链路，以及本地联调用的 placeholder fallback
-- 轻量 Web Console（总览、配置、部署、修复、状态、任务中心）
+- OpenCode 执行链路（支持一键安装与外部实例集成），以及本地联调用的 placeholder fallback
+- 轻量 Web Console（总览、配置、部署、修复、状态、任务中心；含 OpenClaw onboarding 引导流程）
 - Setup 向导（预设选择 + YAML 编辑 + 编排执行）
 - 单机、混合、双机三类示例配置
+- 一键部署：支持 OpenClaw 本地 Docker 部署、OpenCode 本地一键安装，或外部实例集成
 
 当前阶段明确不做的事情：
 
@@ -63,6 +64,59 @@ clawkit 围绕同一套 manifest 支持三种基础拓扑：
 这里的“支持”指 manifest、CLI 与示例配置层面的支持；如果从 Web Setup 向导入口进入，当前内置预设只有 `all-in-one` 和 `hybrid`，`split` 需要通过 YAML 手动编辑。
 
 ## 核心链路
+
+### 组件关系图
+
+如果从运行时视角理解 clawkit，可以先记住下面这张最小关系图：
+
+```text
+浏览器（Web Console）
+        |
+        v
+   controller
+   - 提供 /api/*
+   - 读取 manifest
+   - 返回总览 / 配置 / 状态
+   - 接收 webhook
+   - 管理任务、审批与派发
+        |
+        v
+      worker
+   - 向 controller 注册
+   - 拉取任务
+   - 执行任务
+   - 回传结果
+```
+
+如果再把 OpenClaw 与 OpenCode 放进去，整体关系可以理解为：
+
+```text
+OpenClaw ---> controller ---> worker ---> OpenCode
+                  ^
+                  |
+             Web Console
+```
+
+### 各组件职责
+
+- **Web Console**：前端页面，只负责展示状态、编辑配置、触发操作，本身不直接读取 manifest 或执行任务。
+- **controller**：后端核心服务，负责提供 Web Console API、接收 OpenClaw webhook、管理任务草稿与审批、读取 manifest、维护 worker 状态。
+- **worker**：执行节点，负责向 controller 注册、拉取任务、调用 OpenCode 或 placeholder executor 执行，并回传结果。
+- **OpenClaw**：外部任务来源，通过 webhook 把研发任务发送给 controller。
+- **OpenCode**：实际执行能力提供方，worker 会调用它完成真实执行。
+
+### 最小运行理解
+
+- **只想打开页面并查看配置 / 状态**：至少需要启动 `controller`。
+- **想验证任务派发与 worker 状态**：需要同时启动 `controller` 和 `worker`。
+- **想验证 OpenClaw webhook 接入**：还需要准备 OpenClaw 侧调用入口。
+- **想验证真实执行而不是 placeholder fallback**：还需要准备 OpenCode 服务。
+
+因此，遇到下面这些现象时，优先排查 `controller` 是否已启动并且版本正确：
+
+- 页面显示异常或总览数据为空
+- 新增 API 返回 404
+- manifest 无法读取或配置页报错
 
 从整体功能看，clawkit 当前最重要的不是单独某个命令，而是下面这条最小闭环：
 
