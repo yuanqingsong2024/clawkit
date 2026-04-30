@@ -16,16 +16,33 @@ interface ManifestDocument {
   runtimeNotice: string;
 }
 
+interface ControllerConfigDocument {
+  manifestPath: string | null;
+  source: 'file' | 'env' | 'unset';
+  configPath: string;
+}
+
 export function ConfigPage(): JSX.Element {
   const queryClient = useQueryClient();
+  const controllerConfigQuery = useQuery({
+    queryKey: ['controller-config'],
+    queryFn: () => apiGet<ControllerConfigDocument>('/controller-config'),
+  });
   const manifestQuery = useQuery({
     queryKey: ['manifest'],
     queryFn: () => apiGet<ManifestDocument>('/manifest'),
+    enabled: Boolean(controllerConfigQuery.data?.manifestPath),
   });
 
   const [yamlText, setYamlText] = useState('');
+  const [manifestPathInput, setManifestPathInput] = useState('');
   const [hasUserEdited, setHasUserEdited] = useState(false);
   const [saveHint, setSaveHint] = useState<string | null>(null);
+  const [pathSaveHint, setPathSaveHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    setManifestPathInput(controllerConfigQuery.data?.manifestPath ?? '');
+  }, [controllerConfigQuery.data?.manifestPath]);
 
   useEffect(() => {
     if (!manifestQuery.data) return;
@@ -35,6 +52,23 @@ export function ConfigPage(): JSX.Element {
 
   const originalText = manifestQuery.data?.yamlText ?? '';
   const isDirty = yamlText !== originalText;
+  const isPathDirty = manifestPathInput.trim() !== (controllerConfigQuery.data?.manifestPath ?? '');
+
+  const pathMutation = useMutation({
+    mutationFn: (input: { manifestPath: string }) =>
+      apiPut<ControllerConfigDocument, { manifestPath: string }>('/controller-config', input),
+    onSuccess: (doc) => {
+      setPathSaveHint('路径保存成功');
+      queryClient.setQueryData(['controller-config'], doc);
+      void queryClient.invalidateQueries({ queryKey: ['controller-config'] });
+      void queryClient.invalidateQueries({ queryKey: ['overview'] });
+      void queryClient.invalidateQueries({ queryKey: ['manifest'] });
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : '未知错误';
+      setPathSaveHint(`路径保存失败：${message}`);
+    },
+  });
 
   const saveMutation = useMutation({
     mutationFn: (input: { yamlText: string }) => apiPut<ManifestDocument, { yamlText: string }>('/manifest', input),
@@ -53,6 +87,11 @@ export function ConfigPage(): JSX.Element {
   });
 
   const runtimeNotice = useMemo(() => manifestQuery.data?.runtimeNotice ?? '', [manifestQuery.data]);
+  const manifestPathSourceLabel = useMemo(() => {
+    if (controllerConfigQuery.data?.source === 'file') return '页面配置';
+    if (controllerConfigQuery.data?.source === 'env') return '环境变量';
+    return '未配置';
+  }, [controllerConfigQuery.data?.source]);
 
   return (
     <section className="space-y-4">
@@ -84,16 +123,76 @@ export function ConfigPage(): JSX.Element {
         </div>
       </div>
 
+      {controllerConfigQuery.isLoading ? <InfoNotice message="正在加载 controller 配置…" /> : null}
+      {controllerConfigQuery.error ? (
+        <ErrorNotice message={controllerConfigQuery.error instanceof Error ? controllerConfigQuery.error.message : '未知错误'} />
+      ) : null}
       {manifestQuery.isLoading ? <InfoNotice message="正在加载 manifest…" /> : null}
       {manifestQuery.error ? (
         <ErrorNotice message={manifestQuery.error instanceof Error ? manifestQuery.error.message : '未知错误'} />
       ) : null}
 
+      {pathSaveHint ? (
+        pathSaveHint.startsWith('路径保存成功') ? (
+          <InfoNotice title="路径保存结果" message={pathSaveHint} />
+        ) : (
+          <ErrorNotice title="路径保存结果" message={pathSaveHint} />
+        )
+      ) : null}
       {saveHint ? (
         saveHint.startsWith('保存成功') ? <InfoNotice title="保存结果" message={saveHint} /> : <ErrorNotice title="保存结果" message={saveHint} />
       ) : null}
 
       {runtimeNotice ? <InfoNotice title="运行态提示" message={runtimeNotice} /> : null}
+
+      {controllerConfigQuery.data ? (
+        <Card title="controller 配置">
+          <div className="space-y-4">
+            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <dt className="text-xs text-slate-500">配置文件路径</dt>
+                <dd className="mt-1 break-all text-sm font-medium text-slate-900">{controllerConfigQuery.data.configPath}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">当前 manifest 来源</dt>
+                <dd className="mt-1 text-sm font-medium text-slate-900">{manifestPathSourceLabel}</dd>
+              </div>
+            </dl>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-slate-900" htmlFor="manifest-path-input">
+                manifest 路径
+              </label>
+              <input
+                id="manifest-path-input"
+                type="text"
+                value={manifestPathInput}
+                onChange={(e) => {
+                  setPathSaveHint(null);
+                  setManifestPathInput(e.target.value);
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                placeholder="请输入 manifest YAML 的绝对路径或相对路径"
+              />
+              <div className="text-xs text-slate-500">保存路径后会立即刷新 controller 读取的 manifest；worker 仍需手动重启。</div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPathSaveHint(null);
+                  pathMutation.mutate({ manifestPath: manifestPathInput });
+                }}
+                className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={pathMutation.isPending || !isPathDirty || manifestPathInput.trim().length === 0}
+              >
+                {pathMutation.isPending ? '保存中…' : '保存路径'}
+              </button>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {manifestQuery.data ? (
         <Card
@@ -138,6 +237,10 @@ export function ConfigPage(): JSX.Element {
             content: (
               <div className="space-y-3">
                 <div>
+                  <div className="font-medium text-slate-900">页面如何切换 manifest 文件？</div>
+                  <div className="mt-1 text-slate-600">先在上方保存 manifest 路径，controller 会切换到新文件；worker 仍需手动重启。</div>
+                </div>
+                <div>
                   <div className="font-medium text-slate-900">保存后配置未生效？</div>
                   <div className="mt-1 text-slate-600">需要手动重启 controller 和 worker 进程才能使新配置生效。</div>
                 </div>
@@ -157,28 +260,34 @@ export function ConfigPage(): JSX.Element {
 
       <Card title="manifest YAML">
         <div className="space-y-3">
-          <textarea
-            value={yamlText}
-            onChange={(e) => {
-              setSaveHint(null);
-              setHasUserEdited(true);
-              setYamlText(e.target.value);
-            }}
-            className="h-[420px] w-full resize-y rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs leading-relaxed text-slate-900 focus:border-slate-400 focus:outline-none"
-            placeholder="在此粘贴或编辑 manifest YAML…"
-            spellCheck={false}
-          />
+          {controllerConfigQuery.data?.manifestPath ? (
+            <>
+              <textarea
+                value={yamlText}
+                onChange={(e) => {
+                  setSaveHint(null);
+                  setHasUserEdited(true);
+                  setYamlText(e.target.value);
+                }}
+                className="h-[420px] w-full resize-y rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs leading-relaxed text-slate-900 focus:border-slate-400 focus:outline-none"
+                placeholder="在此粘贴或编辑 manifest YAML…"
+                spellCheck={false}
+              />
 
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-            <div>
-              {yamlText.trim().length === 0 ? '内容为空，将无法保存。' : `字符数：${yamlText.length}`}
-            </div>
-            <div>{isDirty ? '存在未保存改动' : '无改动'}</div>
-          </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                <div>
+                  {yamlText.trim().length === 0 ? '内容为空，将无法保存。' : `字符数：${yamlText.length}`}
+                </div>
+                <div>{isDirty ? '存在未保存改动' : '无改动'}</div>
+              </div>
 
-          {saveMutation.error ? (
-            <ErrorNotice message={saveMutation.error instanceof Error ? saveMutation.error.message : '未知错误'} />
-          ) : null}
+              {saveMutation.error ? (
+                <ErrorNotice message={saveMutation.error instanceof Error ? saveMutation.error.message : '未知错误'} />
+              ) : null}
+            </>
+          ) : (
+            <InfoNotice title="尚未配置 manifest 路径" message="请先在上方保存 manifest 路径，随后才能读取和编辑 YAML 内容。" />
+          )}
         </div>
       </Card>
 

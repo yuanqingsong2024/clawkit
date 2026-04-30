@@ -120,20 +120,37 @@ export function OverviewPage(): JSX.Element {
       {data ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card title="系统信息">
-            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <dt className="text-xs text-slate-500">名称</dt>
-                <dd className="mt-1 text-sm font-medium text-slate-900">{data.profile.name}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">拓扑</dt>
-                <dd className="mt-1 text-sm font-medium text-slate-900">{data.profile.topology}</dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-xs text-slate-500">manifest 路径</dt>
-                <dd className="mt-1 break-all text-sm font-medium text-slate-900">{data.manifestPath ?? '未配置'}</dd>
-              </div>
-            </dl>
+            <div className="space-y-4">
+              <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs text-slate-500">名称</dt>
+                  <dd className="mt-1 text-sm font-medium text-slate-900">{data.profile.name}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">拓扑</dt>
+                  <dd className="mt-1 text-sm font-medium text-slate-900">{data.profile.topology}</dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="text-xs text-slate-500">manifest 路径</dt>
+                  <dd className="mt-1 break-all text-sm font-medium text-slate-900">{data.manifestPath ?? '未配置'}</dd>
+                </div>
+              </dl>
+
+              {!isNonEmptyString(data.manifestPath) ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <div className="font-medium">当前尚未配置 manifest 路径</div>
+                  <div className="mt-1">请先前往配置页保存 manifest 路径，随后再编辑 YAML 或查看完整系统信息。</div>
+                  <div className="mt-3">
+                    <Link
+                      to="/config"
+                      className="inline-flex rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500"
+                    >
+                      去配置页
+                    </Link>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </Card>
 
           <Card title="Controller 状态">
@@ -206,7 +223,19 @@ export function OverviewPage(): JSX.Element {
             </div>
           </Card>
 
-          <Card title="OpenClaw 状态">
+          <Card
+            title="OpenClaw 状态"
+            actions={
+              !data.openClaw.configured ? (
+                <Link
+                  to="/setup"
+                  className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
+                >
+                  一键配置
+                </Link>
+              ) : null
+            }
+          >
             <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <dt className="text-xs text-slate-500">已配置</dt>
@@ -229,7 +258,19 @@ export function OverviewPage(): JSX.Element {
             </dl>
           </Card>
 
-          <Card title="OpenCode 状态列表">
+          <Card
+            title="OpenCode 状态列表"
+            actions={
+              data.openCode.length === 0 ? (
+                <Link
+                  to="/setup"
+                  className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
+                >
+                  一键配置
+                </Link>
+              ) : null
+            }
+          >
             <div className="overflow-auto">
               <table className="min-w-full text-left text-sm">
                 <thead className="text-xs text-slate-500">
