@@ -3,6 +3,10 @@ import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import type { SetupOrchestrator } from '../services/setup-orchestrator';
 import type { QuickSetupProfile } from '../types/quick-setup';
 import { sendSuccess } from '../types/api-response';
+import { EnvironmentCheckService } from '../services/environment-check-service';
+import { ModelCatalogService, type ListModelsInput } from '../services/model-catalog-service';
+import { OpenClawDeployService } from '../services/openclaw-deploy.service';
+import { OpenCodeInstallService } from '../services/opencode-install.service';
 
 interface SetupPreviewBody {
   formData: Record<string, unknown>;
@@ -17,8 +21,13 @@ interface CompileQuickProfileBody {
   profile: QuickSetupProfile;
 }
 
+interface ListModelsBody extends ListModelsInput {}
+
 export function buildSetupRoutes(setupOrchestrator: SetupOrchestrator): FastifyPluginAsync {
   return async (app: FastifyInstance): Promise<void> => {
+    const modelCatalogService = new ModelCatalogService();
+    const environmentCheckService = new EnvironmentCheckService();
+
     app.get('/schema', async (_request, reply) => {
       sendSuccess(reply, {
         code: 'controller.setup.schema_fetched',
@@ -35,6 +44,14 @@ export function buildSetupRoutes(setupOrchestrator: SetupOrchestrator): FastifyP
       });
     });
 
+    app.get('/check-environment', async (_request, reply) => {
+      sendSuccess(reply, {
+        code: 'controller.setup.environment_checked',
+        message: '环境快速检查完成',
+        data: await environmentCheckService.checkEnvironment(),
+      });
+    });
+
     app.post<{ Body: SetupPreviewBody }>('/manifest/preview', async (request, reply) => {
       sendSuccess(reply, {
         code: 'controller.setup.preview_generated',
@@ -48,6 +65,14 @@ export function buildSetupRoutes(setupOrchestrator: SetupOrchestrator): FastifyP
         code: 'controller.setup.quick_profile_compiled',
         message: 'Quick Setup 配置编译成功',
         data: setupOrchestrator.compileQuickProfile(request.body.profile),
+      });
+    });
+
+    app.post<{ Body: ListModelsBody }>('/models/list', async (request, reply) => {
+      sendSuccess(reply, {
+        code: 'controller.setup.models_fetched',
+        message: '模型列表获取成功',
+        data: await modelCatalogService.listModels(request.body),
       });
     });
 
@@ -103,6 +128,76 @@ export function buildSetupRoutes(setupOrchestrator: SetupOrchestrator): FastifyP
       request.raw.on('close', () => {
         clearInterval(heartbeat);
         unsubscribe();
+        reply.raw.end();
+      });
+    });
+
+    app.post('/openclaw/deploy/stream', async (request, reply) => {
+      reply.raw.setHeader('Content-Type', 'text/event-stream');
+      reply.raw.setHeader('Cache-Control', 'no-cache');
+      reply.raw.setHeader('Connection', 'keep-alive');
+      reply.raw.flushHeaders?.();
+
+      const deployService = new OpenClawDeployService();
+
+      deployService.setEventCallback((event) => {
+        reply.raw.write(`event: ${event.event}\n`);
+        reply.raw.write(`data: ${JSON.stringify(event.data)}\n\n`);
+      });
+
+      const heartbeat = setInterval(() => {
+        reply.raw.write(': keep-alive\n\n');
+      }, 15000);
+
+      request.raw.on('close', () => {
+        clearInterval(heartbeat);
+        deployService.terminateAllProcesses();
+        reply.raw.end();
+      });
+
+      deployService.deploy().then(() => {
+        clearInterval(heartbeat);
+        reply.raw.end();
+      }).catch((error) => {
+        clearInterval(heartbeat);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        reply.raw.write(`event: openclaw.error\n`);
+        reply.raw.write(`data: ${JSON.stringify({ error: '部署失败', details: errorMessage })}\n\n`);
+        reply.raw.end();
+      });
+    });
+
+    app.post('/opencode/install/stream', async (request, reply) => {
+      reply.raw.setHeader('Content-Type', 'text/event-stream');
+      reply.raw.setHeader('Cache-Control', 'no-cache');
+      reply.raw.setHeader('Connection', 'keep-alive');
+      reply.raw.flushHeaders?.();
+
+      const installService = new OpenCodeInstallService();
+
+      installService.setEventCallback((event) => {
+        reply.raw.write(`event: ${event.event}\n`);
+        reply.raw.write(`data: ${JSON.stringify(event.data)}\n\n`);
+      });
+
+      const heartbeat = setInterval(() => {
+        reply.raw.write(': keep-alive\n\n');
+      }, 15000);
+
+      request.raw.on('close', () => {
+        clearInterval(heartbeat);
+        installService.terminateAllProcesses();
+        reply.raw.end();
+      });
+
+      installService.install().then(() => {
+        clearInterval(heartbeat);
+        reply.raw.end();
+      }).catch((error) => {
+        clearInterval(heartbeat);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        reply.raw.write(`event: opencode.error\n`);
+        reply.raw.write(`data: ${JSON.stringify({ error: '安装失败', details: errorMessage })}\n\n`);
         reply.raw.end();
       });
     });
