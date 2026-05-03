@@ -385,6 +385,9 @@ export function SetupWizardPage(): JSX.Element {
       }),
   });
 
+  const [showOpenClawEnvCheck, setShowOpenClawEnvCheck] = useState(false);
+  const [showOpenCodeEnvCheck, setShowOpenCodeEnvCheck] = useState(false);
+
   useEffect(() => {
     setQuickIssues(validateQuickFormState(quickForm));
   }, [quickForm]);
@@ -998,7 +1001,10 @@ export function SetupWizardPage(): JSX.Element {
                 <div className="mt-3 flex flex-col gap-2">
                   <button
                     type="button"
-                    onClick={() => deployOpenClawMutation.mutate()}
+                    onClick={() => {
+                      setShowOpenClawEnvCheck(false);
+                      deployOpenClawMutation.mutate();
+                    }}
                     disabled={isAnyDeploying}
                     className="w-full rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -1014,6 +1020,45 @@ export function SetupWizardPage(): JSX.Element {
                       '一键部署 OpenClaw'
                     )}
                   </button>
+
+                  {!showOpenClawEnvCheck && !deployOpenClawMutation.isPending && !deployOpenClawMutation.isSuccess && !deployOpenClawMutation.isError ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowOpenClawEnvCheck(!showOpenClawEnvCheck)}
+                      className="text-xs text-slate-500 hover:text-slate-700 underline"
+                    >
+                      部署前检查清单
+                    </button>
+                  ) : null}
+
+                  {showOpenClawEnvCheck ? (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                      <div className="font-semibold">📋 部署前请确认：</div>
+                      <ul className="mt-2 space-y-1 pl-4 list-disc">
+                        <li>Docker 服务已启动（sudo systemctl start docker）</li>
+                        <li>当前用户有 Docker 权限（docker ps 可正常执行）</li>
+                        <li>端口 18000 未被占用</li>
+                        <li>网络连接正常（可访问镜像仓库）</li>
+                      </ul>
+                      <button
+                        type="button"
+                        onClick={() => setShowOpenClawEnvCheck(false)}
+                        className="mt-2 text-blue-600 hover:text-blue-800 underline"
+                      >
+                        收起
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {deployOpenClawMutation.isPending ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      <div className="font-semibold">⏳ 部署进行中</div>
+                      <div className="mt-1">预计需要 1-3 分钟，请耐心等待...</div>
+                      <div className="mt-2 text-[11px] text-amber-700">
+                        正在执行：准备配置 → 拉取镜像 → 启动容器 → 健康检查
+                      </div>
+                    </div>
+                  ) : null}
 
                   {deployOpenClawMutation.isSuccess && deployOpenClawMutation.data ? (
                     <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
@@ -1031,6 +1076,9 @@ export function SetupWizardPage(): JSX.Element {
                           </a>
                         </div>
                       ) : null}
+                      {deployOpenClawMutation.data.healthCheckPassed ? (
+                        <div className="mt-1 text-emerald-700">✓ 健康检查通过</div>
+                      ) : null}
                       <a href="/setup/openclaw" className="mt-2 inline-block font-medium underline">
                         前往配置 →
                       </a>
@@ -1045,6 +1093,16 @@ export function SetupWizardPage(): JSX.Element {
                           ? deployOpenClawMutation.error.message
                           : '未知错误'}
                       </div>
+                      {deployOpenClawMutation.data?.details ? (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer font-medium text-rose-700 hover:text-rose-900">
+                            查看详细信息和解决方案
+                          </summary>
+                          <pre className="mt-2 whitespace-pre-wrap text-[11px] text-rose-700 bg-rose-100 p-2 rounded">
+                            {deployOpenClawMutation.data.details}
+                          </pre>
+                        </details>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -1068,7 +1126,10 @@ export function SetupWizardPage(): JSX.Element {
                 <div className="mt-3 flex flex-col gap-2">
                   <button
                     type="button"
-                    onClick={() => deployOpenCodeMutation.mutate()}
+                    onClick={() => {
+                      setShowOpenCodeEnvCheck(false);
+                      deployOpenCodeMutation.mutate();
+                    }}
                     disabled={isAnyDeploying}
                     className="w-full rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -1085,6 +1146,49 @@ export function SetupWizardPage(): JSX.Element {
                     )}
                   </button>
 
+                  {!showOpenCodeEnvCheck && !deployOpenCodeMutation.isPending && !deployOpenCodeMutation.isSuccess && !deployOpenCodeMutation.isError ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowOpenCodeEnvCheck(!showOpenCodeEnvCheck)}
+                      className="text-xs text-slate-500 hover:text-slate-700 underline"
+                    >
+                      安装前检查清单
+                    </button>
+                  ) : null}
+
+                  {showOpenCodeEnvCheck ? (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                      <div className="font-semibold">📋 安装前请确认：</div>
+                      <ul className="mt-2 space-y-1 pl-4 list-disc">
+                        <li>系统已安装 curl 和 bash</li>
+                        <li>端口 4096 未被占用</li>
+                        <li>网络连接正常（可访问 opencode.ai）</li>
+                        <li>有足够的磁盘空间（至少 500MB）</li>
+                      </ul>
+                      <button
+                        type="button"
+                        onClick={() => setShowOpenCodeEnvCheck(false)}
+                        className="mt-2 text-blue-600 hover:text-blue-800 underline"
+                      >
+                        收起
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {deployOpenCodeMutation.isPending ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      <div className="font-semibold">⏳ 安装进行中</div>
+                      <div className="mt-1">
+                        {deployOpenCodeMutation.data?.alreadyInstalled
+                          ? '预计需要 10-30 秒（已安装，仅启动服务）'
+                          : '预计需要 1-5 分钟（首次安装），请耐心等待...'}
+                      </div>
+                      <div className="mt-2 text-[11px] text-amber-700">
+                        正在执行：检查安装 → 下载安装 → 启动服务 → 健康检查
+                      </div>
+                    </div>
+                  ) : null}
+
                   {deployOpenCodeMutation.isSuccess && deployOpenCodeMutation.data ? (
                     <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
                       <div className="font-semibold">✓ {deployOpenCodeMutation.data.message}</div>
@@ -1093,6 +1197,12 @@ export function SetupWizardPage(): JSX.Element {
                       ) : null}
                       {deployOpenCodeMutation.data.binaryPath ? (
                         <div className="mt-1">安装路径：{deployOpenCodeMutation.data.binaryPath}</div>
+                      ) : null}
+                      {deployOpenCodeMutation.data.alreadyInstalled ? (
+                        <div className="mt-1 text-emerald-700">ℹ️ 检测到已安装，已直接启动</div>
+                      ) : null}
+                      {deployOpenCodeMutation.data.healthCheckPassed ? (
+                        <div className="mt-1 text-emerald-700">✓ 健康检查通过</div>
                       ) : null}
                       <a href="/setup/opencode" className="mt-2 inline-block font-medium underline">
                         前往配置 →
@@ -1108,6 +1218,16 @@ export function SetupWizardPage(): JSX.Element {
                           ? deployOpenCodeMutation.error.message
                           : '未知错误'}
                       </div>
+                      {deployOpenCodeMutation.data?.details ? (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer font-medium text-rose-700 hover:text-rose-900">
+                            查看详细信息和解决方案
+                          </summary>
+                          <pre className="mt-2 whitespace-pre-wrap text-[11px] text-rose-700 bg-rose-100 p-2 rounded">
+                            {deployOpenCodeMutation.data.details}
+                          </pre>
+                        </details>
+                      ) : null}
                     </div>
                   ) : null}
 
