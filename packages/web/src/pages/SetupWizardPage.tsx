@@ -1462,20 +1462,28 @@ export function SetupWizardPage(): JSX.Element {
 
                   {openCodeInstallState.isInstalling ? (
                     <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-                      <div className="flex items-center gap-2">
-                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        <span className="font-semibold">
-                          {openCodeInstallState.stage || '准备安装...'}
-                          {openCodeInstallState.progress > 0 ? ` (${openCodeInstallState.progress}%)` : ''}
-                        </span>
-                      </div>
+                      <div className="font-semibold">⏳ 安装进行中</div>
+                      {openCodeInstallState.stage ? (
+                        <div className="mt-1 font-medium">{openCodeInstallState.stage}</div>
+                      ) : null}
+                      {openCodeInstallState.progress > 0 ? (
+                        <div className="mt-2">
+                          <div className="flex items-center justify-between text-[11px] mb-1">
+                            <span>进度</span>
+                            <span>{openCodeInstallState.progress}%</span>
+                          </div>
+                          <div className="h-1.5 bg-blue-200 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-blue-600 transition-all duration-300"
+                              style={{ width: `${openCodeInstallState.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
                       {openCodeInstallState.logs.length > 0 ? (
-                        <details className="mt-2" open>
+                        <details className="mt-2">
                           <summary className="cursor-pointer font-medium text-blue-700 hover:text-blue-900">
-                            实时日志 ({openCodeInstallState.logs.length} 条)
+                            查看实时日志 ({openCodeInstallState.logs.length} 条)
                           </summary>
                           <div className="mt-2 max-h-48 overflow-y-auto bg-blue-100 rounded p-2">
                             {openCodeInstallState.logs.map((log, idx) => (
