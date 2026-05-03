@@ -62,6 +62,11 @@ node ./packages/controller/dist/index.js
    - 本地工作目录
    - Controller 端口
    - OpenClaw 地址
+   - OpenClaw webhook token
+   - Prompt 引擎模式
+   - 模型供应商
+   - API Key 环境变量
+   - 默认模型
    - Worker ID
    - 项目 key
    - 仓库路径
@@ -121,6 +126,8 @@ node ./packages/controller/dist/index.js
    配置名称: test-setup
    Controller 端口: 8787
    OpenClaw 地址: http://127.0.0.1:8787
+   OpenClaw webhook token: replace-me
+   Prompt 引擎模式: template
    Worker ID: local-worker
    项目 key: clawkit
    仓库路径: .
@@ -146,6 +153,21 @@ node ./packages/controller/dist/index.js
 - ✅ 显示"4. 执行状态"区块
 - ✅ 步骤状态实时更新
 - ✅ 可以看到实时日志流
+
+---
+
+### 验证 8：模型配置（可选）
+1. 打开“一键配置”弹窗
+2. 将 Prompt 引擎模式切换为 `llm`
+3. 选择模型供应商，例如 `OpenAI`
+4. 填写 API Key 环境变量名，例如 `OPENAI_API_KEY`
+5. 临时填写 API Key，点击“获取模型”
+6. 从模型输入框中选择或手动填写默认模型
+
+**预期结果**：
+- ✅ 能看到模型配置字段
+- ✅ 获取模型成功后可选择默认模型
+- ✅ 切到 YAML 后只写入 `apiKeyEnv` 和 `model`，不会写入 API Key 明文
 
 ---
 
@@ -210,6 +232,7 @@ ls -la packages/web/dist/
 - [ ] 表单校验正常
 - [ ] YAML 模式切换正常
 - [ ] preview 功能正常
+- [ ] 模型配置字段正常显示
 
 ---
 

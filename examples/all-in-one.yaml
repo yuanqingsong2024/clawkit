@@ -14,6 +14,7 @@ services:
   openClaw:
     node: local-dev
     publicUrl: http://127.0.0.1:8787
+    apiKey: replace-me
 workers:
   - id: local-worker
     node: local-dev

@@ -1,131 +1,198 @@
-# OpenCode 集成说明
+# OpenCode 集成指南（一键安装 + 外部实例 + 手动控制）
 
-## 为什么优先使用 `opencode serve + SDK`
+本文档面向“要让 worker 具备真实 OpenCode 执行能力”的用户，覆盖三种安装模式（local/external/skip）、一键安装流程、手动启停方法与常见故障排查。
 
-本阶段优先使用 `opencode serve + @opencode-ai/sdk`，原因如下：
+> 说明：clawkit 的 OpenCode 集成分为两层：
+> 1) **安装/可用性**：OpenCode 服务是否可用（本地一键安装或外部实例）；
+> 2) **执行/退化**：worker 执行任务时会优先走 OpenCode；若 OpenCode 不可用且允许回退，则退化为 placeholder（用于链路验证）。
 
-1. worker 与 OpenCode 部署在同一台机器，走本机 `127.0.0.1` 即可完成连接。
-2. SDK 提供稳定的 `health -> session.create -> session.prompt -> session.messages/status` 调用链，更适合做结构化结果回传。
-3. 相比直接散落 CLI 调用，SDK 更容易统一处理超时、认证、错误信息和后续扩展。
+## 1. 简介
 
-CLI 仍保留为备用模式，但不是主执行路径。
+OpenCode 是一个用于执行工程任务的本地/服务端工具。clawkit 通过 worker 的 OpenCodeExecutor 调用 OpenCode 服务来执行任务。
 
-## 本阶段支持内容
+为了降低首次落地门槛，Web Console 的 Setup 向导支持在 `installMode=local` 时触发 **OpenCode 一键安装**：自动安装、后台启动、健康检查；失败不会阻断 controller/worker 的运行。
 
-- 单项目、单 worker、串行执行
-- worker 真实调用本机 OpenCode server
-- 读取项目 `AGENTS.md`
-- 可选读取 `.opencode/commands/`、`skills/`、`.opencode/oh-my-opencode.jsonc`
-- 将执行结果结构化回传给 controller
-- controller 状态查询展示真实执行摘要
+## 2. 三种安装模式（installMode）
 
-## 本阶段不支持内容
+`services.openCode.installMode` 支持三种模式：`local | external | skip`。
 
-- 多 worker 并发执行
-- 自动 PR
-- 自动部署上线
-- 复杂权限系统
-- controller 侧真实模型推理
+### 2.1 local（本地一键安装 + 后台启动）
 
-> 说明：当前仓库已经包含 Web Console，但它是对现有 controller / CLI 能力的可视化外壳，不属于 OpenCode 执行链路本身。
+适用场景：本机联调、单机/混合拓扑的最小落地，希望“一键安装并拉起 OpenCode”。
 
-## 本机 OpenCode server 配置
+前置要求：
 
-建议使用以下环境变量：
+- 本机可用 `curl` 与 `bash`
+- 端口 `4096` 空闲（当前版本固定使用）
+- `services.openCode.node` 必须指向 `type: local` 的节点
 
-```bash
-export OPENCODE_SERVER_USERNAME="opencode"
-export OPENCODE_SERVER_PASSWORD="your-password"
+配置示例：
+
+```yaml
+services:
+  openCode:
+    node: "local-dev"
+    installMode: "local"
+    publicUrl: "http://127.0.0.1:8787"
 ```
 
-启动命令：
+行为说明：
 
-```bash
-opencode serve --hostname 127.0.0.1 --port 4096
+- controller 会在需要时执行官方安装脚本：`curl -fsSL https://opencode.ai/install | bash`
+- `apply` 会生成启动脚本：`~/.opencode/start-opencode.sh`
+- controller 会以后台方式启动：`opencode serve --port 4096`
+- controller 会轮询健康检查：`http://localhost:4096`，每 2 秒一次，最多 30 次（总计约 60 秒）
+
+相关路径（固定）：
+
+- 二进制：`~/.opencode/bin/opencode`
+- 启动脚本：`~/.opencode/start-opencode.sh`
+- 日志：`~/.opencode/opencode.log`
+- PID：`~/.opencode/opencode.pid`
+
+### 2.2 external（外部实例集成）
+
+适用场景：OpenCode 已由你在其他机器/集群部署，clawkit 不负责安装与启动，只对接已运行的服务。
+
+配置示例：
+
+```yaml
+services:
+  openCode:
+    node: "local-dev"
+    installMode: "external"
+    publicUrl: "https://your-controller.example.com"
 ```
 
-worker 默认优先连接：
+说明：
 
-- `OPENCODE_SERVER_BASE_URL`，例如 `http://127.0.0.1:4096`
-- 若未提供，则退回到项目配置里的 `openCode.port`
+- `external` 模式要求你自行保证 OpenCode 服务已运行、网络可达。
+- Web Console Setup 会跳过“安装 OpenCode”步骤，并提示当前为 external。
 
-## worker 配置项
+### 2.3 skip（跳过 OpenCode）
 
-通过环境变量配置：
+适用场景：先验证 controller/worker/OpenClaw 链路，OpenCode 后续再安装。
 
-```bash
-export CLAWKIT_MANIFEST_PATH="/path/to/clawkit.yaml"
-export CONTROLLER_URL="http://127.0.0.1:8787"
-export WORKER_ID="local-worker"
-export WORKER_SUPPORTED_PROJECTS="clawkit"
-export OPENCODE_EXECUTION_MODE="sdk"
-export OPENCODE_SERVER_BASE_URL="http://127.0.0.1:4096"
-export OPENCODE_SERVER_USERNAME="opencode"
-export OPENCODE_SERVER_PASSWORD_ENV="OPENCODE_SERVER_PASSWORD"
-export OPENCODE_TIMEOUT_MS="300000"
+配置示例：
+
+```yaml
+services:
+  openCode:
+    node: "local-dev"
+    installMode: "skip"
+    publicUrl: "http://127.0.0.1:8787"
 ```
 
-可选启用占位回退：
+说明：
+
+- clawkit 不负责 OpenCode 安装与启动。
+- 若 worker 运行时未能连接 OpenCode，任务将按配置退化为 placeholder（用于链路验证）。
+
+## 3. 一键安装流程（local 模式）
+
+一键安装在内部按 4 个阶段执行：
+
+1. **检测（已安装/已运行）**
+   - 检查二进制是否存在；若已满足条件则跳过安装
+2. **安装（执行官方脚本）**
+   - 运行：`curl -fsSL https://opencode.ai/install | bash`
+3. **启动（后台启动 serve）**
+   - 启动：`opencode serve --port 4096`
+   - 写入 PID 文件，日志追加到 `~/.opencode/opencode.log`
+4. **健康检查（轮询 60s）**
+   - 轮询 `http://localhost:4096`：每 2 秒一次，最多 30 次
+
+失败行为：
+
+- 任一阶段失败都会以“步骤失败 + 非阻塞告警”的方式呈现，不影响 controller/worker 继续运行。
+- 失败后对应任务执行会退化为 placeholder（用于链路验证），你可以稍后修复环境并重试。
+
+## 4. 手动控制（启动 / 重启 / 停止 / 前台调试）
+
+### 4.1 启动 / 重启
 
 ```bash
-export WORKER_PLACEHOLDER_FALLBACK="true"
+# 推荐：使用 apply 生成的启动脚本
+bash ~/.opencode/start-opencode.sh
 ```
 
-## 项目规则读取
-
-worker 执行前会读取：
-
-1. `AGENTS.md`
-2. `.opencode/commands/`
-3. `skills/`
-4. `.opencode/oh-my-opencode.jsonc`
-
-其中：
-
-- `AGENTS.md` 缺失时会明确提示，但不会强制失败
-- 其余目录或文件缺失时自动降级，不中断执行
-
-## 最小联调流程
-
-### 1. 启动 controller
+### 4.2 停止
 
 ```bash
-export CLAWKIT_MANIFEST_PATH="$(pwd)/clawkit.yaml"
-pnpm --filter @clawkit/controller start
+# 通过 PID 文件停止
+kill "$(cat ~/.opencode/opencode.pid)"
 ```
 
-### 2. 启动 worker
+### 4.3 查看日志
 
 ```bash
-export CLAWKIT_MANIFEST_PATH="$(pwd)/clawkit.yaml"
-export CONTROLLER_URL="http://127.0.0.1:8787"
-export WORKER_ID="local-worker"
-export WORKER_SUPPORTED_PROJECTS="clawkit"
-export OPENCODE_EXECUTION_MODE="sdk"
-export OPENCODE_SERVER_BASE_URL="http://127.0.0.1:4096"
-pnpm --filter @clawkit/worker start
+tail -f ~/.opencode/opencode.log
 ```
 
-### 3. 启动 OpenCode server
+### 4.4 前台调试（不建议用于长期运行）
 
 ```bash
-export OPENCODE_SERVER_USERNAME="opencode"
-export OPENCODE_SERVER_PASSWORD="your-password"
-opencode serve --hostname 127.0.0.1 --port 4096
+~/.opencode/bin/opencode serve --port 4096 --foreground
 ```
 
-### 4. 创建任务
+## 5. 故障排查（常见问题）
 
-调用 controller 的任务创建接口，生成 task draft。
+### 5.1 curl / bash 不可用
 
-### 5. 审批任务
+现象：`doctor` 在 `installMode=local` 时提示缺少 `curl` 或 `bash`。
 
-将任务状态推进到 `approved`。
+处理建议：安装对应依赖后重试；或切换为 `external` / `skip`。
 
-### 6. worker 拉取并执行
+### 5.2 端口 4096 被占用
 
-worker 轮询 `/api/workers/:workerId/pull`，拿到编译后的执行卡片后调用 OpenCode。
+现象：启动失败或健康检查一直不通过；`doctor` 报告端口冲突。
 
-### 7. 查询结果
+处理建议：释放占用端口的进程后重试；当前版本不支持自定义端口，如无法释放建议切换为 `external`。
 
-通过 `/api/tasks/:taskId/status` 查看真实执行摘要。
+### 5.3 官方安装脚本网络失败
+
+现象：安装阶段报错（DNS/超时/被拦截）。
+
+处理建议：确认能访问 `https://opencode.ai/`；必要时配置代理或在网络可达环境先手动安装，再使用 `local` 进入“已安装跳过”路径。
+
+### 5.4 二进制不可执行
+
+现象：`~/.opencode/bin/opencode` 存在但启动时报“权限不足”或“格式错误”。
+
+处理建议：
+
+- 确认文件权限：`chmod +x ~/.opencode/bin/opencode`
+- 确认系统架构匹配（例如 x86_64/arm64）
+- 删除后重新执行安装（或切换 external）
+
+### 5.5 健康检查超时（60s）
+
+现象：安装/启动看似成功，但健康检查在 60 秒内未通过。
+
+处理建议：
+
+- 查看日志：`tail -n 200 ~/.opencode/opencode.log`
+- 手动访问：`curl -v http://127.0.0.1:4096`
+- 确认本机防火墙/安全软件未阻止本地回环访问
+
+## 6. 高级配置（当前版本边界内的可调整项）
+
+### 6.1 更换二进制路径 / 日志位置（建议做法）
+
+当前版本的默认路径是固定约定（见上文）。如果你希望使用其他位置的 OpenCode：
+
+- 推荐做法：选择 `installMode=skip` 或 `external`，并由你自己负责安装路径、启动方式与日志管理。
+- `installMode=local` 下不提供“二进制路径/日志路径参数化”的 manifest 字段；如需自定义，请通过你自己的启动脚本与运维方式实现。
+
+### 6.2 与 worker `projects.openCode.port` 的关系
+
+worker 会使用项目配置中的 `projects[*].openCode.port` 连接 OpenCode 服务端口。
+
+- `installMode=local` 固定启动在 `4096`：建议把相关项目的 `openCode.port` 也配置为 `4096`。
+- 如果你配置了其他端口，worker 会按配置去连接，可能与一键安装启动的端口不一致，从而导致连接失败并触发退化。
+
+## 7. 参考资源
+
+- OpenCode 官网：https://opencode.ai/
+- 官方安装脚本 URL：`https://opencode.ai/install`
+- 相关 manifest 字段说明：[`docs/manifest.md`](./manifest.md)

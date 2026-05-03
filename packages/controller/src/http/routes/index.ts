@@ -14,6 +14,9 @@ import { buildOverviewRoutes } from './overview-routes';
 import { buildSetupRoutes } from './setup-routes';
 import { buildSystemRoutes } from './system-routes';
 import { buildControllerConfigRoutes } from './controller-config-routes';
+import { buildOpenClawSetupRoutes } from './openclaw-setup-routes';
+import { buildOpenCodeSetupRoutes } from './opencode-setup-routes';
+import { buildFileBrowserRoutes } from './file-browser-routes';
 
 export async function registerApiRoutes(app: FastifyInstance, container: ServiceContainer): Promise<void> {
   await app.register(buildOpenClawRoutes(container.openClawAdapter), { prefix: '/api/openclaw' });
@@ -29,4 +32,7 @@ export async function registerApiRoutes(app: FastifyInstance, container: Service
   await app.register(buildControllerConfigRoutes(container.webConsoleService), { prefix: '/api/controller-config' });
   await app.register(buildSystemRoutes(container.webConsoleService), { prefix: '/api/system' });
   await app.register(buildSetupRoutes(container.setupOrchestrator), { prefix: '/api/setup' });
+  await app.register(buildOpenClawSetupRoutes(), { prefix: '/api/setup/openclaw' });
+  await app.register(buildOpenCodeSetupRoutes(), { prefix: '/api/setup/opencode' });
+  await app.register(buildFileBrowserRoutes(), { prefix: '/api/file-browser' });
 }

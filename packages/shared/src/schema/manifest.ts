@@ -13,11 +13,33 @@ export const OpenClawSchema = z.object({
   node: z.string().min(1, 'OpenClaw 节点引用不能为空').describe('OpenClaw 所在节点的引用'),
   publicUrl: z.string().url({ message: 'OpenClaw 对外地址必须是有效的 URL' }).describe('OpenClaw 对外访问地址'),
   apiKey: z.string().optional().describe('OpenClaw API Key（如果需要）'),
+  // local：由 clawkit 负责在本地节点部署；external：外部自建/托管；skip：不由 clawkit 负责部署
+  deployMode: z.enum(['local', 'external', 'skip']).default('skip').describe('OpenClaw 部署模式'),
+});
+
+/**
+ * OpenCode Service 配置 Schema
+ */
+export const OpenCodeServiceSchema = z.object({
+  node: z.string().min(1),
+  publicUrl: z.string().url().optional(),
+  indices: z.array(z.number().int().min(0)).optional(),
+  allocation: z.enum(['exclusive', 'shared']).optional(),
+  binaryPath: z.string().optional().describe('OpenCode 二进制路径（可选）'),
+  workspace: z.string().optional().describe('OpenCode 工作空间路径（可选）'),
+  env: z.record(z.string(), z.string()).optional().describe('额外环境变量（可选）'),
+  installMode: z
+    .enum(['local', 'external', 'skip'])
+    .default('skip')
+    .describe(
+      'OpenCode 安装模式：local 表示由 clawkit 自动通过官方脚本安装并启动 serve，external 表示使用外部已运行的 OpenCode 服务，skip 表示不由 clawkit 负责安装与启动',
+    ),
 });
 
 export const ServicesSchema = z.object({
   controller: ControllerSchema.describe('Controller 配置'),
   openClaw: OpenClawSchema.describe('OpenClaw 配置'),
+  openCode: OpenCodeServiceSchema.optional().describe('OpenCode 配置（可选）'),
 });
 
 export const RuntimeSchema = z.object({
@@ -142,6 +164,9 @@ export const ManifestSchema = z.object({
 
   checkNodeRef(manifest.services.controller.node, ['services', 'controller', 'node'], 'Controller');
   checkNodeRef(manifest.services.openClaw.node, ['services', 'openClaw', 'node'], 'OpenClaw');
+  if (manifest.services.openCode) {
+    checkNodeRef(manifest.services.openCode.node, ['services', 'openCode', 'node'], 'OpenCode');
+  }
 
   const workerIds = new Set<string>();
   const projectKeys = new Set<string>();
@@ -174,8 +199,33 @@ export const ManifestSchema = z.object({
 
   const controllerNode = manifest.services.controller.node;
   const openClawNode = manifest.services.openClaw.node;
+  const openCodeNode = manifest.services.openCode?.node;
   const workerNodes = manifest.workers.map((worker) => worker.node);
-  const involvedNodeCount = new Set([controllerNode, openClawNode, ...workerNodes]).size;
+  const involvedNodeCount = new Set(
+    [controllerNode, openClawNode, openCodeNode, ...workerNodes].filter((node): node is string => Boolean(node)),
+  ).size;
+
+  // deployMode 为 local 时，明确要求 OpenClaw 运行在本地节点上，避免“本地部署但指向远程节点”的歧义配置
+  if (manifest.services.openClaw.deployMode === 'local' && manifest.nodes[openClawNode]?.type !== 'local') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['services', 'openClaw', 'deployMode'],
+      message: 'deployMode 为 local 时，openClaw 必须部署在 local 类型节点上',
+    });
+  }
+
+  // installMode 为 local 时，明确要求 OpenCode 运行在本地节点上，避免“本地安装但指向远程节点”的歧义配置
+  if (
+    manifest.services.openCode?.installMode === 'local' &&
+    openCodeNode &&
+    manifest.nodes[openCodeNode]?.type !== 'local'
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['services', 'openCode', 'installMode'],
+      message: 'installMode 为 local 时，openCode 必须部署在 local 类型节点上',
+    });
+  }
 
   if (manifest.profile.topology === 'all-in-one' && involvedNodeCount !== 1) {
     ctx.addIssue({

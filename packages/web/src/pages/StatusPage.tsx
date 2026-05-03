@@ -38,6 +38,10 @@ interface OverviewData {
     publicUrl: string;
     tokenConfigured: boolean;
     detail: string;
+    serviceStatus: 'online' | 'offline' | 'unknown' | 'checking';
+    healthCheckUrl: string | null;
+    healthCheckDetail: string;
+    lastCheckAt: string | null;
   };
   openCode: OpenCodeStatusSummary[];
 }
@@ -47,6 +51,21 @@ function toneForWorkerStatus(status: string): 'success' | 'info' | 'failed' | 'n
   if (status === 'busy') return 'info';
   if (status === 'offline') return 'failed';
   return 'neutral';
+}
+
+function toneForServiceStatus(status: string): 'success' | 'warning' | 'failed' | 'neutral' {
+  if (status === 'online') return 'success';
+  if (status === 'offline') return 'failed';
+  if (status === 'checking') return 'warning';
+  return 'neutral';
+}
+
+function labelForServiceStatus(status: string): string {
+  if (status === 'online') return '在线';
+  if (status === 'offline') return '离线';
+  if (status === 'checking') return '检查中';
+  if (status === 'unknown') return '未知';
+  return status;
 }
 
 export function StatusPage(): JSX.Element {
@@ -95,19 +114,31 @@ export function StatusPage(): JSX.Element {
             <Card title="OpenClaw 状态">
               <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <dt className="text-xs text-slate-500">已配置</dt>
+                  <dt className="text-xs text-slate-500">地址已配置</dt>
                   <dd className="mt-1 text-sm font-medium text-slate-900">{data.openClaw.configured ? '是' : '否'}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-slate-500">Token 已配置</dt>
-                  <dd className="mt-1 text-sm font-medium text-slate-900">{data.openClaw.tokenConfigured ? '是' : '否'}</dd>
+                  <dt className="text-xs text-slate-500">服务状态</dt>
+                  <dd className="mt-1">
+                    <Badge tone={toneForServiceStatus(data.openClaw.serviceStatus)}>
+                      {labelForServiceStatus(data.openClaw.serviceStatus)}
+                    </Badge>
+                  </dd>
                 </div>
                 <div className="sm:col-span-2">
                   <dt className="text-xs text-slate-500">公开地址</dt>
                   <dd className="mt-1 break-all text-sm font-medium text-slate-900">{data.openClaw.publicUrl || '未配置'}</dd>
                 </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Token 已配置</dt>
+                  <dd className="mt-1 text-sm font-medium text-slate-900">{data.openClaw.tokenConfigured ? '是' : '否'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">健康检查</dt>
+                  <dd className="mt-1 text-sm text-slate-700">{data.openClaw.healthCheckDetail}</dd>
+                </div>
                 <div className="sm:col-span-2">
-                  <dt className="text-xs text-slate-500">说明</dt>
+                  <dt className="text-xs text-slate-500">配置说明</dt>
                   <dd className="mt-1 text-sm text-slate-700">{data.openClaw.detail}</dd>
                 </div>
               </dl>

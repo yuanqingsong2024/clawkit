@@ -11,9 +11,13 @@ import type { SetupStreamListener } from './setup-stream-service';
 import type { SetupManifestService } from './setup-manifest-service';
 import type { WebConsoleService } from './web-console-service';
 import type { QuickSetupProfile } from '../types/quick-setup';
+import { OpenClawDeployService } from './openclaw-deploy.service';
+import { OpenCodeInstallService } from './opencode-install.service';
 
 export class SetupOrchestrator {
   private readonly running = new Map<string, Promise<void>>();
+  private readonly issuesByRun = new Map<string, string[]>();
+  private readonly contextByRun = new Map<string, Record<string, unknown>>();
 
   constructor(
     private readonly manifestService: SetupManifestService,
@@ -89,6 +93,7 @@ export class SetupOrchestrator {
     const detail = this.runService.getRunDetail(runId);
     const manifest = detail.run.manifest;
     const issues: string[] = [];
+    this.issuesByRun.set(runId, issues);
 
     await this.runStep(runId, 'generate_manifest', async () => {
       this.webConsoleService.saveManifest(detail.run.manifestYaml);
@@ -128,6 +133,84 @@ export class SetupOrchestrator {
       for (const line of result.logs) this.runService.appendStepLog(runId, 'apply', line);
       if (result.status !== 'success') {
         throw new Error(result.summary);
+      }
+    });
+
+    await this.runStep(runId, 'install_opencode', async () => {
+      const currentManifest = this.getManifestFromRun(runId);
+
+      const openCodeService = currentManifest.services.openCode;
+      if (!openCodeService) {
+        this.logToRun(runId, '跳过 OpenCode 安装（manifest.services.openCode 未配置）');
+        return;
+      }
+
+      if (openCodeService.installMode !== 'local') {
+        this.logToRun(runId, `跳过 OpenCode 安装（installMode: ${openCodeService.installMode}）`);
+        return;
+      }
+
+      this.logToRun(runId, '开始安装并启动 OpenCode...');
+
+      const installService = new OpenCodeInstallService();
+      const result = await installService.install();
+
+      if (result.success) {
+        this.logToRun(runId, `✓ ${result.message}`);
+        if (result.openCodeUrl) {
+          this.logToRun(runId, `OpenCode 访问地址：${result.openCodeUrl}`);
+          this.setRunContext(runId, 'openCodeUrl', result.openCodeUrl);
+        }
+        if (result.binaryPath) {
+          this.logToRun(runId, `OpenCode 二进制路径：${result.binaryPath}`);
+          this.setRunContext(runId, 'openCodeBinaryPath', result.binaryPath);
+        }
+        this.setRunContext(runId, 'openCodeAlreadyInstalled', !!result.alreadyInstalled);
+      } else {
+        this.logToRun(runId, `✗ ${result.message}`);
+        if (result.details) {
+          this.logToRun(runId, `详细信息：${result.details}`);
+        }
+        this.logToRun(runId, '提示：OpenCode 安装失败不影响 Controller/Worker 框架运行（任务执行将退化为 placeholder）');
+        this.logToRun(runId, '您可以稍后手动安装：curl -fsSL https://opencode.ai/install | bash');
+        this.logToRun(runId, '或在 manifest 中将 installMode 改为 external/skip');
+        this.addIssue(runId, 'OpenCode 安装失败，请查看日志了解详情');
+        this.setRunContext(runId, 'openCodeInstallFailed', true);
+
+        // 通过抛出异常让步骤显示为 failed；runStep 内会对 install_opencode 做非阻断处理
+        throw new Error(result.message);
+      }
+    });
+
+    await this.runStep(runId, 'deploy_openclaw', async () => {
+      const currentManifest = this.getManifestFromRun(runId);
+
+      if (currentManifest.services.openClaw.deployMode !== 'local') {
+        this.logToRun(runId, `跳过 OpenClaw 部署（deployMode: ${currentManifest.services.openClaw.deployMode}）`);
+        return;
+      }
+
+      this.logToRun(runId, '开始部署 OpenClaw...');
+
+      const deployService = new OpenClawDeployService();
+      const result = await deployService.deploy();
+
+      if (result.success) {
+        this.logToRun(runId, `✓ ${result.message}`);
+        this.logToRun(runId, `OpenClaw 访问地址：${result.openClawUrl}`);
+        this.setRunContext(runId, 'openClawUrl', result.openClawUrl);
+      } else {
+        this.logToRun(runId, `✗ ${result.message}`);
+        if (result.details) {
+          this.logToRun(runId, `详细信息：${result.details}`);
+        }
+        this.logToRun(runId, '提示：OpenClaw 部署失败不影响 Controller/Worker 运行');
+        this.logToRun(runId, '您可以稍后手动部署，或切换到 external 模式');
+        this.addIssue(runId, 'OpenClaw 部署失败，请查看日志了解详情');
+        this.setRunContext(runId, 'openClawDeployFailed', true);
+
+        // 通过抛出异常让步骤显示为 failed；runStep 内会对 deploy_openclaw 做非阻断处理
+        throw new Error(result.message);
       }
     });
 
@@ -199,8 +282,9 @@ export class SetupOrchestrator {
 
     await this.runStep(runId, 'finalize_summary', async () => {
       const finalDetail = this.runService.getRunDetail(runId);
-      const finalStatus = this.decideFinalStatus(finalDetail.steps, issues);
-      const summary = this.buildSummary(finalStatus, finalDetail.steps, issues);
+      const finalIssues = this.issuesByRun.get(runId) ?? issues;
+      const finalStatus = this.decideFinalStatus(finalDetail.steps, finalIssues);
+      const summary = this.buildSummary(finalStatus, finalDetail.steps, finalIssues);
       this.runService.appendStepLog(runId, 'finalize_summary', summary);
       this.runService.completeRun(runId, finalStatus, summary, null);
     });
@@ -242,6 +326,19 @@ export class SetupOrchestrator {
         };
       });
 
+      // 特殊处理：deploy_openclaw / install_opencode 失败不阻断
+      if (stepKey === 'deploy_openclaw' || stepKey === 'install_opencode') {
+        this.runService.appendStepLog(runId, stepKey, `步骤 ${stepKey} 失败：${message}`);
+        this.runService.appendStepLog(
+          runId,
+          stepKey,
+          stepKey === 'deploy_openclaw'
+            ? '警告：OpenClaw 部署失败，但继续执行后续步骤'
+            : '警告：OpenCode 安装失败，但继续执行后续步骤',
+        );
+        return;
+      }
+
       const detail = this.runService.getRunDetail(runId);
       const finalStatus: Exclude<SetupTopLevelStatus, 'draft' | 'ready' | 'running'> = stepKey === 'smoke_test' ? 'partial_success' : 'failed';
       const summary = this.buildSummary(finalStatus, detail.steps, [
@@ -251,6 +348,28 @@ export class SetupOrchestrator {
       this.runService.completeRun(runId, finalStatus, summary, message);
       throw error;
     }
+  }
+
+  private getManifestFromRun(runId: string): Manifest {
+    return this.runService.getRunDetail(runId).run.manifest;
+  }
+
+  private logToRun(runId: string, message: string): void {
+    // 使用 runStep 已写入的 currentStep，避免额外透传 stepKey
+    const currentStep = this.runService.getRunDetail(runId).run.currentStep;
+    const stepKey = currentStep ?? 'finalize_summary';
+    this.runService.appendStepLog(runId, stepKey, message);
+  }
+
+  private setRunContext(runId: string, key: string, value: unknown): void {
+    const existing = this.contextByRun.get(runId) ?? {};
+    this.contextByRun.set(runId, { ...existing, [key]: value });
+  }
+
+  private addIssue(runId: string, message: string): void {
+    const issues = this.issuesByRun.get(runId);
+    if (!issues) return;
+    issues.push(message);
   }
 
   private buildControllerHealthUrl(manifest: Manifest): string {

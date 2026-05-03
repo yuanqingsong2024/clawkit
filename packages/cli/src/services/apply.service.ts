@@ -40,9 +40,59 @@ interface LoadedApplyContext {
 export class ApplyService {
   private readonly loader = new ManifestLoader();
 
+  /**
+   * 渲染 OpenClaw 本地部署所需的 docker-compose.yml 内容
+   *
+   * 注意：该文件由 clawkit 自动生成，用于最小可用的本地 OpenClaw Gateway 启动。
+   * @param manifest 当前生效的 manifest
+   * @returns docker-compose.yml 文本（以换行结尾）
+   */
+  private renderDockerCompose(manifest: Manifest): string {
+    void manifest;
+    return [
+      '# OpenClaw Docker Compose 配置',
+      '# 由 clawkit 自动生成，请勿手动编辑',
+      '',
+      "version: '3.8'",
+      '',
+      'services:',
+      '  openclaw-gateway:',
+      '    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}',
+      '    container_name: openclaw-gateway',
+      '    ports:',
+      '      - "18000:18000"',
+      '    volumes:',
+      '      - ~/.openclaw:/home/node/.openclaw',
+      '      - ~/.openclaw/workspace:/home/node/.openclaw/workspace',
+      '    environment:',
+      '      - OPENCLAW_GATEWAY_PORT=18000',
+      '      - OPENCLAW_GATEWAY_BIND=lan',
+      '      - OPENCLAW_HOME_VOLUME=/home/node/.openclaw',
+      '    healthcheck:',
+      "      test: [\"CMD\", \"node\", \"-e\", \"fetch('http://127.0.0.1:18000/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"]",
+      '      interval: 30s',
+      '      timeout: 10s',
+      '      start_period: 15s',
+      '      retries: 3',
+      '    restart: unless-stopped',
+      '',
+    ].join('\n');
+  }
+
   createPlan(filePath: string, options: ApplyOptions = {}): ApplyResult {
     const context = this.loader.load(filePath);
     const filePlans = this.buildFilePlans(context, options.onlyLocal ?? false);
+
+    if (context.manifest.services.openClaw.deployMode === 'local') {
+      filePlans.push({
+        nodeName: context.manifest.services.openClaw.node,
+        // docker-compose.yml 仅用于本机 HOME 目录写入，因此强制按本地文件处理
+        nodeType: 'local',
+        targetPath: path.join(os.homedir(), '.openclaw', 'docker-compose.yml'),
+        description: 'OpenClaw 本地部署 docker-compose 配置',
+        content: this.renderDockerCompose(context.manifest),
+      });
+    }
     const notes = this.buildNotes(context.manifest, context.manifestPath, filePlans);
 
     return {

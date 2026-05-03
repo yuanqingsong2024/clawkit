@@ -1,6 +1,7 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import {
   ManifestSchema,
   formatValidationIssue,
@@ -16,6 +17,12 @@ import * as yaml from 'yaml';
 export class DoctorServiceImpl {
   /** Node.js 最低版本要求 */
   private readonly minNodeVersion = '20.0.0';
+
+  /** OpenClaw 默认本地端口（仅 deployMode=local 时检查） */
+  private readonly openClawLocalPort = 18000;
+
+  /** OpenCode 默认本地端口（仅 installMode=local 时检查） */
+  private readonly openCodeLocalPort = 4096;
 
   /**
    * 执行完整诊断
@@ -62,6 +69,54 @@ export class DoctorServiceImpl {
     // 4. 检查 pnpm 是否可用
     checks.push(this.checkPnpm());
 
+    // 4.1 OpenClaw 本地部署环境检查（仅 deployMode=local 时执行）
+    const deployMode = parseResult.manifest.services.openClaw.deployMode;
+    if (deployMode !== 'local') {
+      const skipMessage = `跳过（deployMode: ${deployMode}）`;
+      checks.push(this.skipCheck('Docker 可用性检查', skipMessage));
+      checks.push(this.skipCheck('Docker Compose V2 检查', skipMessage));
+      checks.push(this.skipCheck(`OpenClaw 端口 ${this.openClawLocalPort} 检查`, skipMessage));
+    } else {
+      // 检查顺序：Docker 可用性 → Docker Compose V2 → 端口
+      const dockerCheck = this.checkDockerAvailable();
+      checks.push(dockerCheck);
+
+      if (dockerCheck.status === CheckStatus.FAIL) {
+        // Docker 不可用时，后续检查全部跳过，避免误导
+        checks.push(this.skipCheck('Docker Compose V2 检查', 'Docker 不可用，跳过后续检查'));
+        checks.push(this.skipCheck(`OpenClaw 端口 ${this.openClawLocalPort} 检查`, 'Docker 不可用，跳过后续检查'));
+      } else {
+        checks.push(this.checkDockerCompose());
+        checks.push(this.checkOpenClawPort());
+      }
+    }
+
+    // 4.2 OpenCode 一键安装环境检查（仅 installMode=local 时执行）
+    const installMode = this.getOpenCodeInstallMode(parseResult.manifest);
+    if (installMode !== 'local') {
+      const skipMessage = `跳过（installMode: ${installMode}）`;
+      checks.push(this.skipCheck('curl 可用性检查（OpenCode 安装）', skipMessage));
+      checks.push(this.skipCheck('bash 可用性检查（OpenCode 安装）', skipMessage));
+      checks.push(this.skipCheck(`OpenCode 端口 ${this.openCodeLocalPort} 检查`, skipMessage));
+      checks.push(this.skipCheck('OpenCode 安装状态检查', skipMessage));
+    } else {
+      // 检查顺序：curl → bash → 端口 → 是否已安装
+      const curlCheck = this.checkCurlAvailable();
+      checks.push(curlCheck);
+
+      const bashCheck = this.checkBashAvailable();
+      checks.push(bashCheck);
+
+      if (curlCheck.status === CheckStatus.FAIL || bashCheck.status === CheckStatus.FAIL) {
+        // curl 或 bash 不可用时，后续检查全部跳过，避免误导
+        checks.push(this.skipCheck(`OpenCode 端口 ${this.openCodeLocalPort} 检查`, 'curl 或 bash 不可用，跳过后续检查'));
+        checks.push(this.skipCheck('OpenCode 安装状态检查', 'curl 或 bash 不可用，跳过后续检查'));
+      } else {
+        checks.push(this.checkOpenCodePort());
+        checks.push(this.checkOpenCodeInstalled());
+      }
+    }
+
     // 5. 检查 repoPath 是否存在
     checks.push(...this.checkRepoPaths(parseResult.manifest));
 
@@ -72,6 +127,434 @@ export class DoctorServiceImpl {
     checks.push(...this.checkSshNodes(parseResult.manifest));
 
     return this.buildReport(manifestPath, checks);
+  }
+
+  /**
+   * 检查 Docker 是否可用（仅用于 deployMode=local 的 OpenClaw 部署前置校验）
+   */
+  private checkDockerAvailable(): CheckResult {
+    try {
+      const result = spawnSync('docker', ['--version'], {
+        encoding: 'utf-8',
+      });
+
+      if (result.status === 0) {
+        const version = (result.stdout || '').trim();
+        return {
+          name: 'Docker 可用性检查',
+          status: CheckStatus.PASS,
+          message: version ? `Docker 可用：${version}` : 'Docker 可用',
+        };
+      }
+
+      const stderr = (result.stderr || '').trim();
+      return {
+        name: 'Docker 可用性检查',
+        status: CheckStatus.FAIL,
+        message: `Docker 不可用：${stderr || '未检测到 docker 命令或执行失败'}`,
+        suggestion: '请先安装并启动 Docker（Windows/macOS 推荐 Docker Desktop，Linux 请安装 docker engine 并确保当前用户有权限访问 docker）',
+      };
+    } catch (error) {
+      return {
+        name: 'Docker 可用性检查',
+        status: CheckStatus.FAIL,
+        message: `Docker 检查失败：${(error as Error).message}`,
+        suggestion: '请确认 Docker 已正确安装，并且终端可以直接运行 docker 命令',
+      };
+    }
+  }
+
+  /**
+   * 检查 Docker Compose V2 是否可用（注意：命令为 `docker compose`，不是 `docker-compose`）
+   */
+  private checkDockerCompose(): CheckResult {
+    try {
+      const result = spawnSync('docker', ['compose', 'version'], {
+        encoding: 'utf-8',
+      });
+
+      if (result.status === 0) {
+        const version = (result.stdout || '').trim();
+        return {
+          name: 'Docker Compose V2 检查',
+          status: CheckStatus.PASS,
+          message: version ? `Docker Compose 可用：${version}` : 'Docker Compose 可用',
+        };
+      }
+
+      const stderr = (result.stderr || '').trim();
+      return {
+        name: 'Docker Compose V2 检查',
+        status: CheckStatus.FAIL,
+        message: `Docker Compose 不可用：${stderr || '无法执行 docker compose version'}`,
+        suggestion: '请升级 Docker 到包含 Compose V2 的版本（Windows/macOS 可安装/升级 Docker Desktop；Linux 请安装 docker compose 插件或升级到新版本 Docker）',
+      };
+    } catch (error) {
+      return {
+        name: 'Docker Compose V2 检查',
+        status: CheckStatus.FAIL,
+        message: `Docker Compose 检查失败：${(error as Error).message}`,
+        suggestion: '请确认 docker compose 命令可用（例如：docker compose version）',
+      };
+    }
+  }
+
+  /**
+   * 检查 OpenClaw 本地端口是否冲突
+   * - Windows：使用 netstat
+   * - Linux/macOS：使用 lsof
+   *
+   * 端口冲突：FAIL（阻塞）
+   * 检查失败：WARN（非阻塞）
+   */
+  private checkOpenClawPort(): CheckResult {
+    const port = this.openClawLocalPort;
+
+    try {
+      if (process.platform === 'win32') {
+        const result = spawnSync('netstat', ['-ano', '-p', 'tcp'], {
+          encoding: 'utf-8',
+        });
+
+        if (result.status !== 0) {
+          const stderr = (result.stderr || '').trim();
+          return {
+            name: `OpenClaw 端口 ${port} 检查`,
+            status: CheckStatus.WARN,
+            message: `端口检查失败：无法执行 netstat：${stderr || '未知错误'}`,
+            suggestion: `请手动检查端口是否被占用：netstat -ano -p tcp | findstr :${port}`,
+          };
+        }
+
+        const output = `${result.stdout || ''}`;
+        const lines = output.split(/\r?\n/);
+        const listeningLines = lines.filter((line) => line.includes(`:${port}`) && /\bLISTENING\b/i.test(line));
+
+        if (listeningLines.length > 0) {
+          // 尝试提取 PID（netstat 输出末尾通常是 PID）
+          const pidMatch = listeningLines[0].trim().match(/\s(\d+)\s*$/);
+          const pid = pidMatch?.[1];
+
+          return {
+            name: `OpenClaw 端口 ${port} 检查`,
+            status: CheckStatus.FAIL,
+            message: pid ? `端口 ${port} 已被占用（PID: ${pid}）` : `端口 ${port} 已被占用`,
+            suggestion: pid
+              ? `建议释放端口：\n1) 查看占用：netstat -ano -p tcp | findstr :${port}\n2) 结束进程：taskkill /PID ${pid} /F`
+              : `建议释放端口：\n1) 查看占用：netstat -ano -p tcp | findstr :${port}\n2) 结束进程：taskkill /PID <pid> /F`,
+          };
+        }
+
+        return {
+          name: `OpenClaw 端口 ${port} 检查`,
+          status: CheckStatus.PASS,
+          message: `端口 ${port} 未被占用`,
+        };
+      }
+
+      // Linux/macOS
+      const result = spawnSync('lsof', [`-iTCP:${port}`, '-sTCP:LISTEN', '-n', '-P'], {
+        encoding: 'utf-8',
+      });
+
+      // lsof：未找到占用时通常返回非 0；因此先根据输出判断
+      const stdout = (result.stdout || '').trim();
+      const stderr = (result.stderr || '').trim();
+
+      if (!stdout) {
+        if (result.status === 0) {
+          // 极少数情况下：返回 0 但无输出，视为未占用
+          return {
+            name: `OpenClaw 端口 ${port} 检查`,
+            status: CheckStatus.PASS,
+            message: `端口 ${port} 未被占用`,
+          };
+        }
+
+        // 无输出且非 0：可能是“未找到”也可能是“命令不可用/权限不足”
+        const looksLikeMissing = /not found|command not found|No such file/i.test(stderr);
+        const looksLikePerm = /permission|not permitted|operation not permitted/i.test(stderr);
+
+        if (looksLikeMissing) {
+          return {
+            name: `OpenClaw 端口 ${port} 检查`,
+            status: CheckStatus.WARN,
+            message: '端口检查失败：未找到 lsof 命令（无法自动检测端口占用）',
+            suggestion: `建议安装 lsof 后重试，或手动检查：\n- macOS/Linux：lsof -iTCP:${port} -sTCP:LISTEN -n -P`,
+          };
+        }
+
+        if (looksLikePerm) {
+          return {
+            name: `OpenClaw 端口 ${port} 检查`,
+            status: CheckStatus.WARN,
+            message: '端口检查失败：权限不足，无法执行 lsof 检查端口占用',
+            suggestion: `可尝试使用 sudo 运行 doctor，或手动检查：sudo lsof -iTCP:${port} -sTCP:LISTEN -n -P`,
+          };
+        }
+
+        // 其他未知错误：非阻塞 WARN
+        return {
+          name: `OpenClaw 端口 ${port} 检查`,
+          status: CheckStatus.WARN,
+          message: `端口检查失败：${stderr || '未知错误'}`,
+          suggestion: `请手动检查端口是否被占用：lsof -iTCP:${port} -sTCP:LISTEN -n -P`,
+        };
+      }
+
+      // 有输出：认为端口被占用
+      const firstLine = stdout.split(/\r?\n/)[0] || '';
+      // lsof 输出列通常为：COMMAND PID USER ...
+      const columns = firstLine.trim().split(/\s+/);
+      const pid = columns.length >= 2 ? columns[1] : undefined;
+
+      return {
+        name: `OpenClaw 端口 ${port} 检查`,
+        status: CheckStatus.FAIL,
+        message: pid ? `端口 ${port} 已被占用（PID: ${pid}）` : `端口 ${port} 已被占用`,
+        suggestion: pid
+          ? `建议释放端口：\n1) 查看占用：lsof -iTCP:${port} -sTCP:LISTEN -n -P\n2) 结束进程：kill -9 ${pid}`
+          : `建议释放端口：\n1) 查看占用：lsof -iTCP:${port} -sTCP:LISTEN -n -P\n2) 结束进程：kill -9 <pid>`,
+      };
+    } catch (error) {
+      return {
+        name: `OpenClaw 端口 ${port} 检查`,
+        status: CheckStatus.WARN,
+        message: `端口检查异常：${(error as Error).message}`,
+        suggestion: `请手动检查端口是否被占用（Windows: netstat；Linux/macOS: lsof），端口：${port}`,
+      };
+    }
+  }
+
+  /**
+   * 读取 OpenCode 安装模式（兼容 Schema 尚未更新的情况）
+   * @returns local | external | skip | unknown
+   */
+  private getOpenCodeInstallMode(manifest: Manifest): 'local' | 'external' | 'skip' | 'unknown' {
+    const rawMode = (manifest as unknown as { services?: { openCode?: { installMode?: unknown } } }).services?.openCode?.installMode;
+    if (rawMode === 'local' || rawMode === 'external' || rawMode === 'skip') {
+      return rawMode;
+    }
+    return 'unknown';
+  }
+
+  /**
+   * 检查 curl 是否可用（OpenCode installMode=local 时必需）
+   */
+  private checkCurlAvailable(): CheckResult {
+    try {
+      const result = spawnSync('curl', ['--version'], {
+        encoding: 'utf-8',
+      });
+
+      if (result.status === 0) {
+        const firstLine = `${result.stdout || ''}`.split(/\r?\n/)[0]?.trim();
+        return {
+          name: 'curl 可用性检查（OpenCode 安装）',
+          status: CheckStatus.PASS,
+          message: firstLine ? `curl 可用：${firstLine}` : 'curl 可用',
+        };
+      }
+
+      const stderr = (result.stderr || '').trim();
+      return {
+        name: 'curl 可用性检查（OpenCode 安装）',
+        status: CheckStatus.FAIL,
+        message: `curl 不可用：${stderr || '未检测到 curl 命令或执行失败'}`,
+        suggestion: '请先安装 curl，或将 installMode 改为 external/skip',
+      };
+    } catch (error) {
+      return {
+        name: 'curl 可用性检查（OpenCode 安装）',
+        status: CheckStatus.FAIL,
+        message: `curl 检查失败：${(error as Error).message}`,
+        suggestion: '请先安装 curl，或将 installMode 改为 external/skip',
+      };
+    }
+  }
+
+  /**
+   * 检查 bash 是否可用（OpenCode installMode=local 时必需）
+   */
+  private checkBashAvailable(): CheckResult {
+    try {
+      const result = spawnSync('bash', ['--version'], {
+        encoding: 'utf-8',
+      });
+
+      if (result.status === 0) {
+        const firstLine = `${result.stdout || ''}`.split(/\r?\n/)[0]?.trim();
+        return {
+          name: 'bash 可用性检查（OpenCode 安装）',
+          status: CheckStatus.PASS,
+          message: firstLine ? `bash 可用：${firstLine}` : 'bash 可用',
+        };
+      }
+
+      const stderr = (result.stderr || '').trim();
+      return {
+        name: 'bash 可用性检查（OpenCode 安装）',
+        status: CheckStatus.FAIL,
+        message: `bash 不可用：${stderr || '未检测到 bash 命令或执行失败'}`,
+        suggestion: '请先安装 bash，或将 installMode 改为 external/skip',
+      };
+    } catch (error) {
+      return {
+        name: 'bash 可用性检查（OpenCode 安装）',
+        status: CheckStatus.FAIL,
+        message: `bash 检查失败：${(error as Error).message}`,
+        suggestion: '请先安装 bash，或将 installMode 改为 external/skip',
+      };
+    }
+  }
+
+  /**
+   * 检查 OpenCode 本地端口是否冲突
+   * - Windows：使用 netstat
+   * - Linux/macOS：使用 lsof
+   *
+   * 端口冲突：FAIL（阻塞）
+   * 检查失败：WARN（非阻塞）
+   */
+  private checkOpenCodePort(): CheckResult {
+    const port = this.openCodeLocalPort;
+
+    try {
+      if (process.platform === 'win32') {
+        const result = spawnSync('netstat', ['-ano', '-p', 'tcp'], {
+          encoding: 'utf-8',
+        });
+
+        if (result.status !== 0) {
+          const stderr = (result.stderr || '').trim();
+          return {
+            name: `OpenCode 端口 ${port} 检查`,
+            status: CheckStatus.WARN,
+            message: `端口检查失败：无法执行 netstat：${stderr || '未知错误'}`,
+            suggestion: `请手动检查端口是否被占用：netstat -aon | findstr :${port}`,
+          };
+        }
+
+        const output = `${result.stdout || ''}`;
+        const lines = output.split(/\r?\n/);
+        const listeningLines = lines.filter((line) => line.includes(`:${port}`) && /\bLISTENING\b/i.test(line));
+
+        if (listeningLines.length > 0) {
+          // 尝试提取 PID（netstat 输出末尾通常是 PID）
+          const pidMatch = listeningLines[0].trim().match(/\s(\d+)\s*$/);
+          const pid = pidMatch?.[1];
+
+          return {
+            name: `OpenCode 端口 ${port} 检查`,
+            status: CheckStatus.FAIL,
+            message: pid ? `端口 ${port} 已被占用（PID: ${pid}）` : `端口 ${port} 已被占用`,
+            suggestion: pid
+              ? `建议释放端口：\n1) 查看占用：netstat -aon | findstr :${port}\n2) 结束进程：taskkill /PID ${pid} /F\n或将 installMode 改为 external/skip`
+              : `建议释放端口：\n1) 查看占用：netstat -aon | findstr :${port}\n2) 结束进程：taskkill /PID <pid> /F\n或将 installMode 改为 external/skip`,
+          };
+        }
+
+        return {
+          name: `OpenCode 端口 ${port} 检查`,
+          status: CheckStatus.PASS,
+          message: `端口 ${port} 未被占用`,
+        };
+      }
+
+      // Linux/macOS
+      const result = spawnSync('lsof', [`-iTCP:${port}`, '-sTCP:LISTEN', '-n', '-P'], {
+        encoding: 'utf-8',
+      });
+
+      // lsof：未找到占用时通常返回非 0；因此先根据输出判断
+      const stdout = (result.stdout || '').trim();
+      const stderr = (result.stderr || '').trim();
+
+      if (!stdout) {
+        if (result.status === 0) {
+          // 极少数情况下：返回 0 但无输出，视为未占用
+          return {
+            name: `OpenCode 端口 ${port} 检查`,
+            status: CheckStatus.PASS,
+            message: `端口 ${port} 未被占用`,
+          };
+        }
+
+        // 无输出且非 0：可能是“未找到”也可能是“命令不可用/权限不足”
+        const looksLikeMissing = /not found|command not found|No such file/i.test(stderr);
+        const looksLikePerm = /permission|not permitted|operation not permitted/i.test(stderr);
+
+        if (looksLikeMissing) {
+          return {
+            name: `OpenCode 端口 ${port} 检查`,
+            status: CheckStatus.WARN,
+            message: '端口检查失败：未找到 lsof 命令（无法自动检测端口占用）',
+            suggestion: `建议安装 lsof 后重试，或手动检查：\n- macOS/Linux：lsof -iTCP:${port} -sTCP:LISTEN -n -P`,
+          };
+        }
+
+        if (looksLikePerm) {
+          return {
+            name: `OpenCode 端口 ${port} 检查`,
+            status: CheckStatus.WARN,
+            message: '端口检查失败：权限不足，无法执行 lsof 检查端口占用',
+            suggestion: `可尝试使用 sudo 运行 doctor，或手动检查：sudo lsof -iTCP:${port} -sTCP:LISTEN -n -P`,
+          };
+        }
+
+        // 其他未知错误：非阻塞 WARN
+        return {
+          name: `OpenCode 端口 ${port} 检查`,
+          status: CheckStatus.WARN,
+          message: `端口检查失败：${stderr || '未知错误'}`,
+          suggestion: `请手动检查端口是否被占用：lsof -iTCP:${port} -sTCP:LISTEN -n -P`,
+        };
+      }
+
+      // 有输出：认为端口被占用
+      const firstLine = stdout.split(/\r?\n/)[0] || '';
+      // lsof 输出列通常为：COMMAND PID USER ...
+      const columns = firstLine.trim().split(/\s+/);
+      const pid = columns.length >= 2 ? columns[1] : undefined;
+
+      return {
+        name: `OpenCode 端口 ${port} 检查`,
+        status: CheckStatus.FAIL,
+        message: pid ? `端口 ${port} 已被占用（PID: ${pid}）` : `端口 ${port} 已被占用`,
+        suggestion: `建议释放端口：\n- macOS/Linux：lsof -ti:${port} | xargs kill\n或将 installMode 改为 external/skip`,
+      };
+    } catch (error) {
+      return {
+        name: `OpenCode 端口 ${port} 检查`,
+        status: CheckStatus.WARN,
+        message: `端口检查异常：${(error as Error).message}`,
+        suggestion: `请手动检查端口是否被占用（Windows: netstat；Linux/macOS: lsof），端口：${port}`,
+      };
+    }
+  }
+
+  /**
+   * 检查 OpenCode 是否已安装（非阻塞提示）
+   */
+  private checkOpenCodeInstalled(): CheckResult {
+    const homeDir = os.homedir();
+    const opencodeBinPath = path.join(homeDir, '.opencode', 'bin', 'opencode');
+    const opencodeExePath = `${opencodeBinPath}.exe`;
+
+    const exists = fs.existsSync(opencodeBinPath) || fs.existsSync(opencodeExePath);
+    if (exists) {
+      return {
+        name: 'OpenCode 安装状态检查',
+        status: CheckStatus.PASS,
+        message: 'OpenCode 已安装：~/.opencode/bin/opencode（将跳过安装步骤）',
+      };
+    }
+
+    return {
+      name: 'OpenCode 安装状态检查',
+      status: CheckStatus.WARN,
+      message: 'OpenCode 未安装，将由 install_opencode 步骤自动安装',
+    };
   }
 
   /**

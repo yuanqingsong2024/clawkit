@@ -7,6 +7,14 @@ export interface QuickSetupProfile {
   };
   openclaw: {
     publicUrl: string;
+    deployMode: 'local' | 'external' | 'skip';
+  };
+  promptEngine: {
+    mode: 'template' | 'llm' | 'hybrid';
+    provider?: 'openai' | 'anthropic' | 'custom';
+    baseUrl?: string;
+    apiKeyEnv?: string;
+    model?: string;
   };
   worker: {
     id: string;

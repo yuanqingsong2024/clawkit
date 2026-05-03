@@ -61,6 +61,10 @@ interface OverviewData {
     publicUrl: string;
     tokenConfigured: boolean;
     detail: string;
+    serviceStatus: 'online' | 'offline' | 'unknown' | 'checking';
+    healthCheckUrl: string | null;
+    healthCheckDetail: string;
+    lastCheckAt: string | null;
   };
   openCode: OpenCodeStatusSummary[];
   recentTasks: TaskListItem[];
@@ -83,6 +87,21 @@ function toneForWorkerStatus(status: string): 'success' | 'info' | 'failed' | 'n
 
 function labelForBool(value: boolean): string {
   return value ? '是' : '否';
+}
+
+function toneForServiceStatus(status: string): 'success' | 'warning' | 'failed' | 'neutral' {
+  if (status === 'online') return 'success';
+  if (status === 'offline') return 'failed';
+  if (status === 'checking') return 'warning';
+  return 'neutral';
+}
+
+function labelForServiceStatus(status: string): string {
+  if (status === 'online') return '在线';
+  if (status === 'offline') return '离线';
+  if (status === 'checking') return '检查中';
+  if (status === 'unknown') return '未知';
+  return status;
 }
 
 export function OverviewPage(): JSX.Element {
@@ -226,24 +245,38 @@ export function OverviewPage(): JSX.Element {
           <Card
             title="OpenClaw 状态"
             actions={
-              !data.openClaw.configured ? (
-                <Link
-                  to="/setup"
-                  className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
-                >
-                  一键配置
-                </Link>
-              ) : null
+              <div className="flex gap-2">
+                {!data.openClaw.configured || data.openClaw.serviceStatus === 'offline' ? (
+                  <>
+                    <Link
+                      to="/setup/openclaw"
+                      className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
+                    >
+                      配置 OpenClaw
+                    </Link>
+                    <Link
+                      to="/setup"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-slate-50"
+                    >
+                      完整向导
+                    </Link>
+                  </>
+                ) : null}
+              </div>
             }
           >
             <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <dt className="text-xs text-slate-500">已配置</dt>
+                <dt className="text-xs text-slate-500">地址已配置</dt>
                 <dd className="mt-1 text-sm font-medium text-slate-900">{labelForBool(data.openClaw.configured)}</dd>
               </div>
               <div>
-                <dt className="text-xs text-slate-500">Token 已配置</dt>
-                <dd className="mt-1 text-sm font-medium text-slate-900">{labelForBool(data.openClaw.tokenConfigured)}</dd>
+                <dt className="text-xs text-slate-500">服务状态</dt>
+                <dd className="mt-1">
+                  <Badge tone={toneForServiceStatus(data.openClaw.serviceStatus)}>
+                    {labelForServiceStatus(data.openClaw.serviceStatus)}
+                  </Badge>
+                </dd>
               </div>
               <div className="sm:col-span-2">
                 <dt className="text-xs text-slate-500">公开地址</dt>
@@ -251,8 +284,16 @@ export function OverviewPage(): JSX.Element {
                   {isNonEmptyString(data.openClaw.publicUrl) ? data.openClaw.publicUrl : '未配置'}
                 </dd>
               </div>
+              <div>
+                <dt className="text-xs text-slate-500">Token 已配置</dt>
+                <dd className="mt-1 text-sm font-medium text-slate-900">{labelForBool(data.openClaw.tokenConfigured)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">健康检查</dt>
+                <dd className="mt-1 text-sm text-slate-700">{data.openClaw.healthCheckDetail}</dd>
+              </div>
               <div className="sm:col-span-2">
-                <dt className="text-xs text-slate-500">说明</dt>
+                <dt className="text-xs text-slate-500">配置说明</dt>
                 <dd className="mt-1 text-sm text-slate-700">{data.openClaw.detail}</dd>
               </div>
             </dl>
@@ -261,14 +302,24 @@ export function OverviewPage(): JSX.Element {
           <Card
             title="OpenCode 状态列表"
             actions={
-              data.openCode.length === 0 ? (
-                <Link
-                  to="/setup"
-                  className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
-                >
-                  一键配置
-                </Link>
-              ) : null
+              <div className="flex gap-2">
+                {data.openCode.length === 0 ? (
+                  <>
+                    <Link
+                      to="/setup/opencode"
+                      className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
+                    >
+                      配置 OpenCode
+                    </Link>
+                    <Link
+                      to="/setup"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-slate-50"
+                    >
+                      完整向导
+                    </Link>
+                  </>
+                ) : null}
+              </div>
             }
           >
             <div className="overflow-auto">

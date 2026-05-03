@@ -242,6 +242,7 @@ export class InitService {
           openClaw: {
             node: 'local-dev',
             publicUrl: 'http://127.0.0.1:3000',
+            apiKey: 'replace-me',
           },
         };
       case 'hybrid':
@@ -254,6 +255,7 @@ export class InitService {
           openClaw: {
             node: 'cloud-control',
             publicUrl: 'https://your-server.example.com',
+            apiKey: 'replace-me',
           },
         };
       case 'split':
@@ -266,6 +268,7 @@ export class InitService {
           openClaw: {
             node: 'control-plane',
             publicUrl: 'https://openclaw.example.com',
+            apiKey: 'replace-me',
           },
         };
       default:

@@ -24,6 +24,7 @@ services:
   openClaw:
     node: "cloud-control"
     publicUrl: "https://claw.example.com"
+    apiKey: "replace-me"
 
 workers:
   - id: "laptop-worker"

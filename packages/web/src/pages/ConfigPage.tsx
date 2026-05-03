@@ -6,6 +6,7 @@ import { Card } from '../components/ui/Card';
 import { CodeBlock } from '../components/ui/CodeBlock';
 import { Badge } from '../components/ui/Badge';
 import { ErrorNotice, InfoNotice } from '../components/ui/Notice';
+import { FileBrowserModal } from '../components/FileBrowserModal';
 import { apiGet, apiPut } from '../lib/api';
 import { formatDateTime } from '../lib/format';
 
@@ -39,6 +40,7 @@ export function ConfigPage(): JSX.Element {
   const [hasUserEdited, setHasUserEdited] = useState(false);
   const [saveHint, setSaveHint] = useState<string | null>(null);
   const [pathSaveHint, setPathSaveHint] = useState<string | null>(null);
+  const [isBrowserOpen, setIsBrowserOpen] = useState(false);
 
   useEffect(() => {
     setManifestPathInput(controllerConfigQuery.data?.manifestPath ?? '');
@@ -92,6 +94,11 @@ export function ConfigPage(): JSX.Element {
     if (controllerConfigQuery.data?.source === 'env') return '环境变量';
     return '未配置';
   }, [controllerConfigQuery.data?.source]);
+
+  const handleSelectPath = (path: string) => {
+    setPathSaveHint(null);
+    setManifestPathInput(path);
+  };
 
   return (
     <section className="space-y-4">
@@ -163,17 +170,26 @@ export function ConfigPage(): JSX.Element {
               <label className="block text-sm font-medium text-slate-900" htmlFor="manifest-path-input">
                 manifest 路径
               </label>
-              <input
-                id="manifest-path-input"
-                type="text"
-                value={manifestPathInput}
-                onChange={(e) => {
-                  setPathSaveHint(null);
-                  setManifestPathInput(e.target.value);
-                }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
-                placeholder="请输入 manifest YAML 的绝对路径或相对路径"
-              />
+              <div className="flex gap-2">
+                <input
+                  id="manifest-path-input"
+                  type="text"
+                  value={manifestPathInput}
+                  onChange={(e) => {
+                    setPathSaveHint(null);
+                    setManifestPathInput(e.target.value);
+                  }}
+                  className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                  placeholder="请输入 manifest YAML 的绝对路径或相对路径"
+                />
+                <button
+                  type="button"
+                  onClick={() => setIsBrowserOpen(true)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
+                >
+                  浏览
+                </button>
+              </div>
               <div className="text-xs text-slate-500">保存路径后会立即刷新 controller 读取的 manifest；worker 仍需手动重启。</div>
             </div>
 
@@ -303,6 +319,12 @@ export function ConfigPage(): JSX.Element {
           ]}
         />
       ) : null}
+
+      <FileBrowserModal
+        isOpen={isBrowserOpen}
+        onClose={() => setIsBrowserOpen(false)}
+        onSelect={handleSelectPath}
+      />
     </section>
   );
 }

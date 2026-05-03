@@ -36,6 +36,8 @@ export class QuickSetupCompiler {
         openClaw: {
           node: 'local-dev',
           publicUrl: profile.openclaw.publicUrl.trim(),
+          deployMode: profile.openclaw.deployMode,
+          apiKey: 'replace-me',
         },
       },
       workers: [
@@ -59,12 +61,7 @@ export class QuickSetupCompiler {
         },
       ],
       runtime: {
-        promptEngine: {
-          mode: 'template',
-          temperature: 0.7,
-          maxTokens: 4096,
-          timeoutMs: 30000,
-        },
+        promptEngine: this.buildPromptEngine(profile),
         memory: {
           enabled: true,
           provider: 'local',
@@ -118,6 +115,8 @@ export class QuickSetupCompiler {
         openClaw: {
           node: 'cloud-control',
           publicUrl: profile.openclaw.publicUrl.trim(),
+          deployMode: profile.openclaw.deployMode,
+          apiKey: 'replace-me',
         },
       },
       workers: [
@@ -141,12 +140,7 @@ export class QuickSetupCompiler {
         },
       ],
       runtime: {
-        promptEngine: {
-          mode: 'template',
-          temperature: 0.7,
-          maxTokens: 4096,
-          timeoutMs: 30000,
-        },
+        promptEngine: this.buildPromptEngine(profile),
         memory: {
           enabled: true,
           provider: 'local',
@@ -183,6 +177,21 @@ export class QuickSetupCompiler {
 
     if (profile.openclaw.publicUrl.trim().length === 0) {
       throw this.createBadRequest('OpenClaw 地址不能为空');
+    }
+
+    if (profile.promptEngine.mode === 'llm' || profile.promptEngine.mode === 'hybrid') {
+      if (!profile.promptEngine.provider) {
+        throw this.createBadRequest('模型供应商不能为空');
+      }
+      if (!profile.promptEngine.apiKeyEnv || profile.promptEngine.apiKeyEnv.trim().length === 0) {
+        throw this.createBadRequest('模型 API Key 环境变量不能为空');
+      }
+      if (!profile.promptEngine.model || profile.promptEngine.model.trim().length === 0) {
+        throw this.createBadRequest('默认模型不能为空');
+      }
+      if (profile.promptEngine.provider === 'custom' && (!profile.promptEngine.baseUrl || profile.promptEngine.baseUrl.trim().length === 0)) {
+        throw this.createBadRequest('自定义模型供应商必须填写 Base URL');
+      }
     }
 
     if (profile.worker.id.trim().length === 0) {
@@ -222,5 +231,26 @@ export class QuickSetupCompiler {
       errorCode: 'controller.setup.quick_profile_invalid',
       message,
     });
+  }
+
+  private buildPromptEngine(profile: QuickSetupProfile): Manifest['runtime']['promptEngine'] {
+    const base = {
+      mode: profile.promptEngine.mode,
+      temperature: 0.7,
+      maxTokens: 4096,
+      timeoutMs: 30000,
+    } as Manifest['runtime']['promptEngine'];
+
+    if (profile.promptEngine.mode === 'template') {
+      return base;
+    }
+
+    return {
+      ...base,
+      provider: profile.promptEngine.provider,
+      baseUrl: profile.promptEngine.baseUrl?.trim() || undefined,
+      apiKeyEnv: profile.promptEngine.apiKeyEnv?.trim(),
+      model: profile.promptEngine.model?.trim(),
+    };
   }
 }

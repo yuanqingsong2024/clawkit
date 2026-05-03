@@ -30,6 +30,22 @@ export class Controller {
 
 if (require.main === module) {
   const controller = new Controller();
+  
+  // 优雅关闭处理
+  const shutdown = async (signal: string) => {
+    console.log(`\n收到 ${signal} 信号，正在关闭服务...`);
+    try {
+      await controller.stop();
+      process.exit(0);
+    } catch (error) {
+      console.error('关闭服务时出错:', error);
+      process.exit(1);
+    }
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+
   controller.start().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : '未知错误';
     console.error(`Controller 启动失败：${message}`);

@@ -9,6 +9,7 @@ import { Badge } from '../components/ui/Badge';
 import { CodeBlock } from '../components/ui/CodeBlock';
 import { Stepper, StepperStepData } from '../components/ui/Stepper';
 import { apiPost } from '../lib/api';
+import { apiGet } from '../lib/api';
 import {
   calculateProgress,
   findCurrentStepIndex,
@@ -349,6 +350,24 @@ interface OpenCodeInstallResponse {
   healthCheckPassed?: boolean;
 }
 
+/**
+ * 环境检查单项结果
+ */
+interface EnvironmentCheckItem {
+  name: string;
+  status: 'pass' | 'warn' | 'fail';
+  message: string;
+  suggestion?: string;
+}
+
+/**
+ * 环境检查响应类型
+ */
+interface EnvironmentCheckResponse {
+  overall: 'pass' | 'warn' | 'fail';
+  checks: EnvironmentCheckItem[];
+}
+
 export function SetupWizardPage(): JSX.Element {
   const [inputMode, setInputMode] = useState<SetupInputMode>('quick');
   const [quickForm, setQuickForm] = useState<QuickSetupFormState>(defaultQuickFormState());
@@ -385,8 +404,31 @@ export function SetupWizardPage(): JSX.Element {
       }),
   });
 
+  /**
+   * 环境检查 mutation hook
+   * API: GET /api/setup/check-environment
+   */
+  const checkEnvironmentMutation = useMutation({
+    mutationFn: async () => {
+      return await apiGet<EnvironmentCheckResponse>('/setup/check-environment');
+    },
+    onSuccess: (data) => {
+      setEnvCheckResult(data);
+    },
+    onError: (error) => {
+      console.error('环境检查失败:', error);
+    },
+  });
+
   const [showOpenClawEnvCheck, setShowOpenClawEnvCheck] = useState(false);
   const [showOpenCodeEnvCheck, setShowOpenCodeEnvCheck] = useState(false);
+  const [envCheckResult, setEnvCheckResult] = useState<EnvironmentCheckResponse | null>(null);
+
+  // 页面加载时自动执行环境检查
+  useEffect(() => {
+    checkEnvironmentMutation.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     setQuickIssues(validateQuickFormState(quickForm));
@@ -988,6 +1030,28 @@ export function SetupWizardPage(): JSX.Element {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="text-sm font-semibold text-slate-900">或单独配置组件</div>
             <div className="mt-1 text-sm text-slate-600">如果你已经有部分服务运行，可以单独配置 OpenClaw 或 OpenCode。</div>
+            
+            {envCheckResult && envCheckResult.overall !== 'pass' ? (
+              <div className={`mt-4 rounded-lg border px-3 py-2 text-xs ${
+                envCheckResult.overall === 'warn' 
+                  ? 'border-amber-200 bg-amber-50 text-amber-800' 
+                  : 'border-rose-200 bg-rose-50 text-rose-800'
+              }`}>
+                <div className="font-semibold">
+                  {envCheckResult.overall === 'warn' ? '⚠️ 环境检查发现警告' : '❌ 环境检查未通过'}
+                </div>
+                <ul className="mt-2 space-y-1 pl-4 list-disc">
+                  {envCheckResult.checks
+                    .filter((check) => check.status !== 'pass')
+                    .map((check, index) => (
+                      <li key={index}>
+                        {check.name}: {check.message}
+                        {check.suggestion ? ` (${check.suggestion})` : ''}
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            ) : null}
             
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <div className="rounded-xl border border-slate-200 bg-white p-4">

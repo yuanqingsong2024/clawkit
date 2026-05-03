@@ -28,6 +28,7 @@ services:
   openClaw:
     node: "control-plane"
     publicUrl: "https://openclaw.prod.example.com"
+    apiKey: "replace-me"
 
 workers:
   - id: "worker-prod-1"

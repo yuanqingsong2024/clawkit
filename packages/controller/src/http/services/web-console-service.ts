@@ -102,10 +102,16 @@ export interface OverviewData {
     items: WorkerRecord[];
   };
   openClaw: {
+    // 配置状态
     configured: boolean;
     publicUrl: string;
     tokenConfigured: boolean;
     detail: string;
+    // 服务状态
+    serviceStatus: 'online' | 'offline' | 'unknown' | 'checking';
+    healthCheckUrl: string | null;
+    healthCheckDetail: string;
+    lastCheckAt: Date | null;
   };
   openCode: OpenCodeStatusSummary[];
   latestDoctor: SystemActionResult<DoctorReport> | null;
@@ -141,6 +147,9 @@ export class WebConsoleService {
     const openCode = manifestDocument
       ? await this.buildOpenCodeStatuses(manifestDocument.manifest)
       : [];
+    const openClaw = manifestDocument
+      ? await this.buildOpenClawStatus(manifestDocument.manifest)
+      : this.buildOpenClawStatusFallback();
     const recentTasks = this.apiService.listTasks().tasks.slice(0, 6);
     const recentDispatches = this.dispatchService.getAllDispatches()
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
@@ -172,21 +181,7 @@ export class WebConsoleService {
         offline: workers.filter((worker) => worker.status === WorkerStatus.OFFLINE).length,
         items: workers,
       },
-      openClaw: manifestDocument
-        ? {
-            configured: manifestDocument.manifest.services.openClaw.publicUrl.trim().length > 0,
-            publicUrl: manifestDocument.manifest.services.openClaw.publicUrl,
-            tokenConfigured: (manifestDocument.manifest.services.openClaw.apiKey?.trim().length ?? 0) > 0,
-            detail: (manifestDocument.manifest.services.openClaw.apiKey?.trim().length ?? 0) > 0
-              ? 'OpenClaw webhook token 已配置'
-              : 'OpenClaw webhook token 缺失，后续调用会失败',
-          }
-        : {
-            configured: false,
-            publicUrl: '',
-            tokenConfigured: false,
-            detail: '当前未找到 manifest，无法判断 OpenClaw 配置状态',
-          },
+      openClaw,
       openCode,
       latestDoctor: this.getLatestResult<DoctorReport>('doctor'),
       latestPlan: this.getLatestResult<DryRunPlan>('plan'),
@@ -194,7 +189,7 @@ export class WebConsoleService {
       latestHeal: this.getLatestResult<HealResult>('heal'),
       recentTasks,
       recentDispatches,
-      alerts: this.buildAlerts(workers, openCode),
+      alerts: this.buildAlerts(workers, openCode, openClaw),
     };
   }
 
@@ -447,7 +442,7 @@ export class WebConsoleService {
     return actionResult;
   }
 
-  private buildAlerts(workers: WorkerRecord[], openCode: OpenCodeStatusSummary[]): OverviewAlert[] {
+  private buildAlerts(workers: WorkerRecord[], openCode: OpenCodeStatusSummary[], openClaw: OverviewData['openClaw']): OverviewAlert[] {
     const alerts: OverviewAlert[] = [];
 
     for (const worker of workers) {
@@ -468,6 +463,14 @@ export class WebConsoleService {
           detail: status.detail,
         });
       }
+    }
+
+    if (openClaw.serviceStatus === 'offline') {
+      alerts.push({
+        level: 'warning',
+        title: 'OpenClaw 服务不可达',
+        detail: openClaw.healthCheckDetail,
+      });
     }
 
     const latestDoctor = this.getLatestResult<DoctorReport>('doctor');
@@ -510,13 +513,22 @@ export class WebConsoleService {
         }
 
         const health = await this.checkHttp(`http://127.0.0.1:${project.openCode.port}/global/health`);
+        const isOnline = health.ok;
+        const detailMessage = isOnline
+          ? 'OpenCode 服务运行正常'
+          : health.message.includes('ECONNREFUSED')
+            ? `OpenCode 服务未启动（端口 ${project.openCode.port} 无响应）`
+            : health.message.includes('请求超时')
+              ? `OpenCode 服务响应超时（端口 ${project.openCode.port}）`
+              : `OpenCode 服务异常：${health.message}`;
+
         statuses.push({
           workerId: worker.id,
           projectKey: project.key,
           nodeName: worker.node,
           port: project.openCode.port,
-          status: health.ok ? 'online' : 'offline',
-          detail: health.ok ? 'OpenCode server 可达' : `OpenCode server 不可达：${health.message}`,
+          status: isOnline ? 'online' : 'offline',
+          detail: detailMessage,
         });
       }
     }
@@ -534,7 +546,7 @@ export class WebConsoleService {
           port: target.port,
           path: `${target.pathname}${target.search}`,
           method: 'GET',
-          timeout: 1500,
+          timeout: 3000,
         }, (response) => {
           resolve({
             ok: (response.statusCode ?? 500) >= 200 && (response.statusCode ?? 500) < 300,
@@ -621,5 +633,56 @@ export class WebConsoleService {
       default:
         return 'warning';
     }
+  }
+
+  private async buildOpenClawStatus(manifest: Manifest): Promise<OverviewData['openClaw']> {
+    const openClawConfig = manifest.services.openClaw;
+    const configured = openClawConfig.publicUrl.trim().length > 0;
+    const tokenConfigured = (openClawConfig.apiKey?.trim().length ?? 0) > 0;
+    const configDetail = tokenConfigured
+      ? 'OpenClaw webhook token 已配置'
+      : 'OpenClaw webhook token 缺失，后续调用会失败';
+
+    const node = manifest.nodes[openClawConfig.node];
+    if (!node || node.type !== 'local') {
+      return {
+        configured,
+        publicUrl: openClawConfig.publicUrl,
+        tokenConfigured,
+        detail: configDetail,
+        serviceStatus: 'unknown',
+        healthCheckUrl: null,
+        healthCheckDetail: '远程节点当前阶段不做主动探测',
+        lastCheckAt: null,
+      };
+    }
+
+    const healthCheckUrl = 'http://localhost:18000/healthz';
+    const checkStartAt = new Date();
+    const health = await this.checkHttp(healthCheckUrl);
+
+    return {
+      configured,
+      publicUrl: openClawConfig.publicUrl,
+      tokenConfigured,
+      detail: configDetail,
+      serviceStatus: health.ok ? 'online' : 'offline',
+      healthCheckUrl,
+      healthCheckDetail: health.ok ? 'OpenClaw 服务可达' : `OpenClaw 服务不可达：${health.message}`,
+      lastCheckAt: checkStartAt,
+    };
+  }
+
+  private buildOpenClawStatusFallback(): OverviewData['openClaw'] {
+    return {
+      configured: false,
+      publicUrl: '',
+      tokenConfigured: false,
+      detail: '当前未找到 manifest，无法判断 OpenClaw 配置状态',
+      serviceStatus: 'unknown',
+      healthCheckUrl: null,
+      healthCheckDetail: '未加载 manifest',
+      lastCheckAt: null,
+    };
   }
 }

@@ -30,6 +30,8 @@ const STEP_DEFINITIONS = [
   { key: 'doctor', title: '执行 doctor' },
   { key: 'plan', title: '执行 plan' },
   { key: 'apply', title: '执行 apply' },
+  { key: 'install_opencode', title: '安装并启动 OpenCode' },
+  { key: 'deploy_openclaw', title: '部署 OpenClaw' },
   { key: 'check_controller', title: '检查 controller 状态' },
   { key: 'check_worker', title: '检查 worker 状态' },
   { key: 'check_opencode', title: '检查 OpenCode 状态' },
