@@ -56,6 +56,14 @@ interface SetupRunDetail {
   };
   run: SetupRun;
   steps: SetupStep[];
+  /**
+   * 由后端 setup 运行过程写入的上下文信息，用于 UI 引导展示。
+   * 注意：字段可能不存在，因此全部做成可选。
+   */
+  context?: {
+    openClawUrl?: string;
+    openClawDeployFailed?: boolean;
+  };
 }
 
 interface SetupPreviewResult {
@@ -72,6 +80,14 @@ interface QuickSetupProfile {
   };
   openclaw: {
     publicUrl: string;
+    deployMode: 'local' | 'external' | 'skip';
+  };
+  promptEngine: {
+    mode: 'template' | 'llm' | 'hybrid';
+    provider?: 'openai' | 'anthropic' | 'custom';
+    baseUrl?: string;
+    apiKeyEnv?: string;
+    model?: string;
   };
   worker: {
     id: string;
@@ -83,6 +99,16 @@ interface QuickSetupProfile {
     keyPath: string;
     workDir: string;
   };
+}
+
+interface ModelSummary {
+  id: string;
+  label: string;
+}
+
+interface ListModelsResult {
+  provider: QuickSetupFormState['modelProvider'];
+  models: ModelSummary[];
 }
 
 interface SSEEvent {
@@ -98,7 +124,14 @@ function defaultQuickFormState(): QuickSetupFormState {
     mode: 'all-in-one',
     projectKey: 'clawkit',
     repoPath: '.',
-    publicUrl: 'http://127.0.0.1:8787',
+    publicUrl: 'http://127.0.0.1:18789',
+    openClawDeployMode: 'skip',
+    promptEngineMode: 'template',
+    modelProvider: 'openai',
+    modelBaseUrl: '',
+    modelApiKeyEnv: 'OPENAI_API_KEY',
+    modelApiKey: '',
+    defaultModel: '',
     workerId: 'local-worker',
     opencodePort: '4096',
     remoteHost: '',
@@ -144,6 +177,17 @@ function validateQuickFormState(form: QuickSetupFormState): ValidationIssue[] {
   requireValue('workerId', 'Worker ID', form.workerId);
   requireValue('opencodePort', 'OpenCode 端口', form.opencodePort);
 
+  if (form.promptEngineMode !== 'template') {
+    requireValue('modelApiKeyEnv', '模型 API Key 环境变量', form.modelApiKeyEnv);
+    requireValue('defaultModel', '默认模型', form.defaultModel);
+    if (form.modelProvider === 'custom') {
+      requireValue('modelBaseUrl', '模型 Base URL', form.modelBaseUrl);
+    }
+    if (form.modelBaseUrl.trim().length > 0 && !isValidUrl(form.modelBaseUrl.trim())) {
+      issues.push({ key: 'modelBaseUrl', message: '模型 Base URL 必须是合法的 http/https URL' });
+    }
+  }
+
   if (!isPositiveInteger(form.opencodePort)) {
     issues.push({ key: 'opencodePort', message: 'OpenCode 端口必须是正整数' });
   }
@@ -172,6 +216,18 @@ function buildQuickProfile(form: QuickSetupFormState): QuickSetupProfile {
     },
     openclaw: {
       publicUrl: form.publicUrl.trim(),
+      deployMode: form.openClawDeployMode,
+    },
+    promptEngine: {
+      mode: form.promptEngineMode,
+      ...(form.promptEngineMode === 'template'
+        ? {}
+        : {
+            provider: form.modelProvider,
+            baseUrl: form.modelBaseUrl.trim() || undefined,
+            apiKeyEnv: form.modelApiKeyEnv.trim(),
+            model: form.defaultModel.trim(),
+          }),
     },
     worker: {
       id: form.workerId.trim(),
@@ -205,6 +261,18 @@ function mapQuickErrorMessage(message: string): string {
   }
   if (message.includes('OpenClaw 地址')) {
     return 'OpenClaw 地址格式不正确';
+  }
+  if (message.includes('模型供应商')) {
+    return '模型供应商不能为空';
+  }
+  if (message.includes('模型 API Key 环境变量')) {
+    return '模型 API Key 环境变量不能为空';
+  }
+  if (message.includes('默认模型')) {
+    return '默认模型不能为空';
+  }
+  if (message.includes('Base URL')) {
+    return '自定义模型供应商必须填写 Base URL';
   }
   if (message.includes('仓库路径')) {
     return '本地项目路径不能为空';
@@ -241,6 +309,46 @@ function summarizeStepStatus(step: SetupStep | undefined): string {
   return '未完成';
 }
 
+/**
+ * OpenClaw 一键部署请求类型
+ */
+interface OpenClawDeployRequest {
+  deployMode: 'local';
+}
+
+/**
+ * OpenClaw 一键部署响应类型
+ */
+interface OpenClawDeployResponse {
+  success: boolean;
+  message: string;
+  details?: string;
+  openClawUrl?: string;
+  deployMode: 'local' | 'external' | 'skip';
+  healthCheckPassed?: boolean;
+}
+
+/**
+ * OpenCode 一键安装请求类型
+ */
+interface OpenCodeInstallRequest {
+  installMode: 'local';
+}
+
+/**
+ * OpenCode 一键安装响应类型
+ */
+interface OpenCodeInstallResponse {
+  success: boolean;
+  message: string;
+  details?: string;
+  openCodeUrl?: string;
+  binaryPath?: string;
+  installMode: 'local' | 'external' | 'skip';
+  alreadyInstalled?: boolean;
+  healthCheckPassed?: boolean;
+}
+
 export function SetupWizardPage(): JSX.Element {
   const [inputMode, setInputMode] = useState<SetupInputMode>('quick');
   const [quickForm, setQuickForm] = useState<QuickSetupFormState>(defaultQuickFormState());
@@ -252,7 +360,30 @@ export function SetupWizardPage(): JSX.Element {
   const [logs, setLogs] = useState<string[]>([]);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
   const [dismissedErrorMessage, setDismissedErrorMessage] = useState<string | null>(null);
+  const [modelOptions, setModelOptions] = useState<ModelSummary[]>([]);
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  /**
+   * OpenClaw 一键部署 Hook
+   * 调用 /api/setup/openclaw/configure 以 local 模式部署 OpenClaw
+   */
+  const deployOpenClawMutation = useMutation({
+    mutationFn: async () =>
+      apiPost<OpenClawDeployResponse, OpenClawDeployRequest>('/setup/openclaw/configure', {
+        deployMode: 'local',
+      }),
+  });
+
+  /**
+   * OpenCode 一键安装 Hook
+   * 调用 /api/setup/opencode/configure 以 local 模式安装 OpenCode
+   */
+  const deployOpenCodeMutation = useMutation({
+    mutationFn: async () =>
+      apiPost<OpenCodeInstallResponse, OpenCodeInstallRequest>('/setup/opencode/configure', {
+        installMode: 'local',
+      }),
+  });
 
   useEffect(() => {
     setQuickIssues(validateQuickFormState(quickForm));
@@ -275,6 +406,34 @@ export function SetupWizardPage(): JSX.Element {
       setManifestYaml(data.yamlText);
       setPreviewHint('配置检查通过，已生成规范化 manifest。');
       setYamlError(null);
+    },
+  });
+
+  const listModelsMutation = useMutation({
+    mutationFn: async () =>
+      apiPost<
+        ListModelsResult,
+        {
+          provider: QuickSetupFormState['modelProvider'];
+          apiKey: string;
+          baseUrl?: string;
+        }
+      >('/setup/models/list', {
+        provider: quickForm.modelProvider,
+        apiKey: quickForm.modelApiKey,
+        baseUrl: quickForm.modelBaseUrl.trim() || undefined,
+      }),
+    onSuccess: (data) => {
+      setModelOptions(data.models);
+      if (!quickForm.defaultModel && data.models[0]) {
+        updateQuickForm('defaultModel', data.models[0].id);
+      }
+      setYamlError(null);
+      setPreviewHint(`已获取 ${data.models.length} 个模型，请选择默认模型。`);
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : '模型列表获取失败';
+      setYamlError(message);
     },
   });
 
@@ -397,6 +556,11 @@ export function SetupWizardPage(): JSX.Element {
   const isFinished = runDetail?.run.status === 'success' || runDetail?.run.status === 'partial_success' || runDetail?.run.status === 'failed';
   const usesRemoteControl = quickForm.mode === 'hybrid';
 
+  const isAnyDeploying = deployOpenClawMutation.isPending || deployOpenCodeMutation.isPending;
+
+  const openClawUrl = runDetail?.context?.openClawUrl;
+  const openClawDeployFailed = Boolean(runDetail?.context?.openClawDeployFailed);
+
   const startErrorMessage = useMemo(() => {
     if (!startMutation.error) return null;
     if (startMutation.error instanceof Error) {
@@ -453,7 +617,33 @@ export function SetupWizardPage(): JSX.Element {
   }, [quickForm.name, runDetail]);
 
   const updateQuickForm = <K extends keyof QuickSetupFormState>(key: K, value: QuickSetupFormState[K]) => {
-    setQuickForm((prev) => ({ ...prev, [key]: value }));
+    setQuickForm((prev) => {
+      const next = { ...prev, [key]: value };
+      if (key === 'modelProvider') {
+        next.modelApiKeyEnv = value === 'anthropic' ? 'ANTHROPIC_API_KEY' : value === 'custom' ? 'MODEL_API_KEY' : 'OPENAI_API_KEY';
+        next.defaultModel = '';
+      }
+      return next;
+    });
+    if (key === 'modelProvider' || key === 'modelBaseUrl') {
+      setModelOptions([]);
+    }
+  };
+
+  const handleFetchModels = async () => {
+    if (quickForm.promptEngineMode === 'template') {
+      setYamlError('模板模式不需要获取模型列表');
+      return;
+    }
+    if (quickForm.modelApiKey.trim().length === 0) {
+      setYamlError('请先填写模型 API Key，再获取模型列表');
+      return;
+    }
+    if (quickForm.modelProvider === 'custom' && quickForm.modelBaseUrl.trim().length === 0) {
+      setYamlError('自定义模型供应商必须填写 Base URL');
+      return;
+    }
+    await listModelsMutation.mutateAsync();
   };
 
   const handleCheckQuickProfile = async () => {
@@ -659,6 +849,46 @@ export function SetupWizardPage(): JSX.Element {
             </div>
           ) : null}
 
+          {openClawUrl ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="text-sm font-semibold text-slate-900">📋 下一步：配置 OpenClaw</div>
+              <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-slate-700">
+                <li>
+                  访问 OpenClaw UI：
+                  <a
+                    href={openClawUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="ml-2 break-all font-medium text-slate-900 underline underline-offset-2 hover:text-slate-700"
+                  >
+                    {openClawUrl}
+                  </a>
+                </li>
+                <li>完成 Onboarding 流程（创建账号、配置 Webhook、生成 Token）。</li>
+                <li>
+                  更新 clawkit 配置：将 OpenClaw 的 URL / Token 写入 <code className="rounded bg-slate-100 px-1 py-0.5">~/.openclaw/openclaw.json</code>。
+                </li>
+              </ol>
+              <div className="mt-3 text-xs leading-5 text-slate-500">
+                提示：Token 属于敏感信息，请避免在日志或截图中泄露。
+              </div>
+            </div>
+          ) : null}
+
+          {openClawDeployFailed ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 ring-1 ring-amber-600/10">
+              <div className="text-sm font-semibold">⚠️ OpenClaw 部署失败</div>
+              <div className="mt-2 text-sm leading-relaxed">
+                该问题通常不会影响 Controller / Worker 的启动与使用；你可以先继续验证主链路，再单独处理 OpenClaw。
+              </div>
+              <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed">
+                <li>查看日志：展开“实时日志”或失败步骤的“步骤日志”，定位具体错误原因。</li>
+                <li>手动运行 docker compose：在部署目录执行 compose 启动（确保 Docker 正常运行并可拉取镜像）。</li>
+                <li>切换到 external 模式：回到“一键配置”中选择“使用外部服务”，改用已部署的 OpenClaw 实例。</li>
+              </ul>
+            </div>
+          ) : null}
+
           <Accordion
             type="multiple"
             items={[
@@ -746,9 +976,151 @@ export function SetupWizardPage(): JSX.Element {
           ) : null}
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-          <div className="text-sm font-semibold text-slate-900">尚未启动配置流程</div>
-          <div className="mt-1 text-sm text-slate-600">点击右上角“一键配置”，填写必要信息后确认执行。</div>
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+            <div className="text-sm font-semibold text-slate-900">尚未启动配置流程</div>
+            <div className="mt-1 text-sm text-slate-600">点击右上角"一键配置"，填写必要信息后确认执行。</div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="text-sm font-semibold text-slate-900">或单独配置组件</div>
+            <div className="mt-1 text-sm text-slate-600">如果你已经有部分服务运行，可以单独配置 OpenClaw 或 OpenCode。</div>
+            
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">OpenClaw</div>
+                    <div className="mt-1 text-xs text-slate-600">部署或连接 OpenClaw 服务</div>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => deployOpenClawMutation.mutate()}
+                    disabled={isAnyDeploying}
+                    className="w-full rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deployOpenClawMutation.isPending ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        部署中...
+                      </span>
+                    ) : (
+                      '一键部署 OpenClaw'
+                    )}
+                  </button>
+
+                  {deployOpenClawMutation.isSuccess && deployOpenClawMutation.data ? (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                      <div className="font-semibold">✓ {deployOpenClawMutation.data.message}</div>
+                      {deployOpenClawMutation.data.openClawUrl ? (
+                        <div className="mt-1">
+                          服务地址：
+                          <a
+                            href={deployOpenClawMutation.data.openClawUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="ml-1 font-medium underline"
+                          >
+                            {deployOpenClawMutation.data.openClawUrl}
+                          </a>
+                        </div>
+                      ) : null}
+                      <a href="/setup/openclaw" className="mt-2 inline-block font-medium underline">
+                        前往配置 →
+                      </a>
+                    </div>
+                  ) : null}
+
+                  {deployOpenClawMutation.isError ? (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                      <div className="font-semibold">✗ 部署失败</div>
+                      <div className="mt-1">
+                        {deployOpenClawMutation.error instanceof Error
+                          ? deployOpenClawMutation.error.message
+                          : '未知错误'}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <a
+                    href="/setup/openclaw"
+                    className="text-center text-xs text-slate-600 underline hover:text-slate-900"
+                  >
+                    手动配置
+                  </a>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">OpenCode</div>
+                    <div className="mt-1 text-xs text-slate-600">安装或连接 OpenCode 服务</div>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => deployOpenCodeMutation.mutate()}
+                    disabled={isAnyDeploying}
+                    className="w-full rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deployOpenCodeMutation.isPending ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        安装中...
+                      </span>
+                    ) : (
+                      '一键安装 OpenCode'
+                    )}
+                  </button>
+
+                  {deployOpenCodeMutation.isSuccess && deployOpenCodeMutation.data ? (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                      <div className="font-semibold">✓ {deployOpenCodeMutation.data.message}</div>
+                      {deployOpenCodeMutation.data.openCodeUrl ? (
+                        <div className="mt-1">服务地址：{deployOpenCodeMutation.data.openCodeUrl}</div>
+                      ) : null}
+                      {deployOpenCodeMutation.data.binaryPath ? (
+                        <div className="mt-1">安装路径：{deployOpenCodeMutation.data.binaryPath}</div>
+                      ) : null}
+                      <a href="/setup/opencode" className="mt-2 inline-block font-medium underline">
+                        前往配置 →
+                      </a>
+                    </div>
+                  ) : null}
+
+                  {deployOpenCodeMutation.isError ? (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                      <div className="font-semibold">✗ 安装失败</div>
+                      <div className="mt-1">
+                        {deployOpenCodeMutation.error instanceof Error
+                          ? deployOpenCodeMutation.error.message
+                          : '未知错误'}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <a
+                    href="/setup/opencode"
+                    className="text-center text-xs text-slate-600 underline hover:text-slate-900"
+                  >
+                    手动配置
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -769,6 +1141,9 @@ export function SetupWizardPage(): JSX.Element {
         onUpdateQuickForm={updateQuickForm}
         onUpdateManifestYaml={setManifestYaml}
         onClearYamlError={() => setYamlError(null)}
+        modelOptions={modelOptions}
+        onFetchModels={handleFetchModels}
+        isFetchingModels={listModelsMutation.isPending}
         onCheckQuickProfile={handleCheckQuickProfile}
         isCompilePending={compileMutation.isPending}
         isPreviewPending={previewMutation.isPending}
