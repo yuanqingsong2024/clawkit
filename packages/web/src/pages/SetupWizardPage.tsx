@@ -1333,7 +1333,16 @@ export function SetupWizardPage(): JSX.Element {
                 </div>
 
                 <div className="mt-3 flex flex-col gap-2">
-                  {!openClawDeployState.result ? (
+                  {isOpenClawOnline ? (
+                    <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+                      <div className="flex items-center gap-2">
+                        <svg className="h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        <span className="font-medium">OpenClaw 服务已在线，无需部署</span>
+                      </div>
+                    </div>
+                  ) : !openClawDeployState.result ? (
                     <>
                       <button
                         type="button"
@@ -1341,7 +1350,7 @@ export function SetupWizardPage(): JSX.Element {
                           setShowOpenClawEnvCheck(false);
                           startOpenClawDeploy();
                         }}
-                        disabled={isAnyDeploying || isOpenClawOnline}
+                        disabled={isAnyDeploying}
                         className="w-full rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {openClawDeployState.isDeploying ? (
