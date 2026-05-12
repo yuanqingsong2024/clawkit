@@ -72,6 +72,7 @@ export interface ConfigModalProps {
   onExecute: () => void;
 
   startErrorMessage: string | null;
+  isOpenClawOnline?: boolean;
 }
 
 export function ConfigModal(props: ConfigModalProps): JSX.Element {
@@ -273,7 +274,7 @@ export function ConfigModal(props: ConfigModalProps): JSX.Element {
                     value={props.quickForm.publicUrl}
                     onChange={(e) => props.onUpdateQuickForm('publicUrl', e.target.value)}
                     disabled={isBusy}
-                    placeholder="http://127.0.0.1:18789"
+                    placeholder="http://127.0.0.1:18000"
                   />
                   {fieldErrorText(quickIssueText('publicUrl'))}
                 </label>
@@ -545,6 +546,7 @@ export function ConfigModal(props: ConfigModalProps): JSX.Element {
                 props.isPreviewPending ||
                 props.isCompilePending ||
                 props.isRunning ||
+                props.isOpenClawOnline ||
                 (props.inputMode === 'yaml' && !props.manifestYaml.trim())
               }
               className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"

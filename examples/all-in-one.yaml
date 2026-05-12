@@ -13,8 +13,9 @@ services:
     apiPrefix: /api
   openClaw:
     node: local-dev
-    publicUrl: http://127.0.0.1:8787
-    apiKey: replace-me
+    deployMode: local
+    publicUrl: http://127.0.0.1:18000
+    apiKey: clawkit-local-openclaw-token
 workers:
   - id: local-worker
     node: local-dev

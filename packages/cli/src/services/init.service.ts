@@ -241,7 +241,7 @@ export class InitService {
           },
           openClaw: {
             node: 'local-dev',
-            publicUrl: 'http://127.0.0.1:3000',
+            publicUrl: 'http://127.0.0.1:18000',
             apiKey: 'replace-me',
           },
         };

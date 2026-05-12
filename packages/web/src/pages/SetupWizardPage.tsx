@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as yaml from 'yaml';
@@ -125,7 +125,7 @@ function defaultQuickFormState(): QuickSetupFormState {
     mode: 'all-in-one',
     projectKey: 'clawkit',
     repoPath: '.',
-    publicUrl: 'http://127.0.0.1:18789',
+    publicUrl: 'http://127.0.0.1:18000',
     openClawDeployMode: 'skip',
     promptEngineMode: 'template',
     modelProvider: 'openai',
@@ -381,6 +381,22 @@ interface SSEDeployState {
 }
 
 /**
+ * Overview 数据接口（用于查询服务状态）
+ */
+interface OverviewData {
+  openClaw: {
+    configured: boolean;
+    publicUrl: string;
+    tokenConfigured: boolean;
+    detail: string;
+    serviceStatus: 'online' | 'offline' | 'unknown' | 'checking';
+    healthCheckUrl: string | null;
+    healthCheckDetail: string;
+    lastCheckAt: string | null;
+  };
+}
+
+/**
  * SSE 安装状态
  */
 interface SSEInstallState {
@@ -390,6 +406,48 @@ interface SSEInstallState {
   logs: string[];
   result: OpenCodeInstallResponse | null;
   error: string | null;
+}
+
+/**
+ * 验证日志消息是否为有效的非空字符串
+ * @param message - 待验证的消息
+ * @returns 是否为有效的非空字符串
+ */
+function isValidLogMessage(message: unknown): message is string {
+  return typeof message === 'string' && message.trim().length > 0;
+}
+
+/**
+ * 验证 SSE 日志事件的 payload 结构
+ * 兼容两种字段名：message（setup.log）和 log（openclaw.log/opencode.log）
+ * @param data - SSE 事件解析后的数据
+ * @returns 是否包含有效的日志字段
+ */
+function isValidLogEvent(data: unknown): data is { message: string } | { log: string } {
+  if (typeof data !== 'object' || data === null) {
+    return false;
+  }
+  
+  // 检查 message 字段（setup.log 使用）
+  if ('message' in data && isValidLogMessage((data as { message: unknown }).message)) {
+    return true;
+  }
+  
+  // 检查 log 字段（openclaw.log/opencode.log 使用）
+  if ('log' in data && isValidLogMessage((data as { log: unknown }).log)) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * 从 SSE 日志事件中提取日志消息
+ * @param data - 已验证的日志事件数据
+ * @returns 日志消息字符串
+ */
+function extractLogMessage(data: { message?: string; log?: string }): string {
+  return data.message || data.log || '';
 }
 
 export function SetupWizardPage(): JSX.Element {
@@ -404,6 +462,14 @@ export function SetupWizardPage(): JSX.Element {
   const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
   const [dismissedErrorMessage, setDismissedErrorMessage] = useState<string | null>(null);
   const [modelOptions, setModelOptions] = useState<ModelSummary[]>([]);
+
+  const overviewQuery = useQuery({
+    queryKey: ['overview'],
+    queryFn: () => apiGet<OverviewData>('/overview'),
+    refetchInterval: 5000,
+  });
+
+  const isOpenClawOnline = overviewQuery.data?.openClaw.serviceStatus === 'online';
 
   // SSE 部署状态
   const [openClawDeployState, setOpenClawDeployState] = useState<SSEDeployState>({
@@ -479,7 +545,7 @@ export function SetupWizardPage(): JSX.Element {
       error: null,
     });
 
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
     const eventSource = new EventSource(`${apiBaseUrl}/setup/openclaw/deploy/stream`);
     openClawEventSourceRef.current = eventSource;
 
@@ -494,10 +560,15 @@ export function SetupWizardPage(): JSX.Element {
 
     eventSource.addEventListener('openclaw.log', (e) => {
       const data = JSON.parse(e.data);
-      setOpenClawDeployState((prev) => ({
-        ...prev,
-        logs: [...prev.logs, data.message],
-      }));
+      // 运行时校验：只接受包含有效日志字段的事件
+      if (isValidLogEvent(data)) {
+        setOpenClawDeployState((prev) => ({
+          ...prev,
+          logs: [...prev.logs, extractLogMessage(data)],
+        }));
+      } else {
+        console.warn('[OpenClaw Deploy] 收到无效日志事件，已忽略:', data);
+      }
     });
 
     eventSource.addEventListener('openclaw.complete', (e) => {
@@ -507,7 +578,7 @@ export function SetupWizardPage(): JSX.Element {
         isDeploying: false,
         stage: '部署完成',
         progress: 100,
-        result: data.result,
+        result: data,
       }));
       eventSource.close();
       openClawEventSourceRef.current = null;
@@ -549,7 +620,7 @@ export function SetupWizardPage(): JSX.Element {
       error: null,
     });
 
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
     const eventSource = new EventSource(`${apiBaseUrl}/setup/opencode/install/stream`);
     openCodeEventSourceRef.current = eventSource;
 
@@ -564,10 +635,15 @@ export function SetupWizardPage(): JSX.Element {
 
     eventSource.addEventListener('opencode.log', (e) => {
       const data = JSON.parse(e.data);
-      setOpenCodeInstallState((prev) => ({
-        ...prev,
-        logs: [...prev.logs, data.message],
-      }));
+      // 运行时校验：只接受包含有效日志字段的事件
+      if (isValidLogEvent(data)) {
+        setOpenCodeInstallState((prev) => ({
+          ...prev,
+          logs: [...prev.logs, extractLogMessage(data)],
+        }));
+      } else {
+        console.warn('[OpenCode Install] 收到无效日志事件，已忽略:', data);
+      }
     });
 
     eventSource.addEventListener('opencode.complete', (e) => {
@@ -577,7 +653,7 @@ export function SetupWizardPage(): JSX.Element {
         isInstalling: false,
         stage: '安装完成',
         progress: 100,
-        result: data.result,
+        result: data,
       }));
       eventSource.close();
       openCodeEventSourceRef.current = null;
@@ -751,8 +827,14 @@ export function SetupWizardPage(): JSX.Element {
 
     eventSource.addEventListener('setup.log', (e) => {
       const event = JSON.parse(e.data) as SSEEvent;
+      // 运行时校验：只接受包含有效 message 字段的日志事件
       if (event.data && typeof event.data === 'object' && 'message' in event.data) {
-        setLogs((prev) => [...prev, (event.data as { message: string }).message]);
+        const message = (event.data as { message: unknown }).message;
+        if (isValidLogMessage(message)) {
+          setLogs((prev) => [...prev, message]);
+        } else {
+          console.warn('[Setup Run] 收到无效日志消息，已忽略:', event.data);
+        }
       }
     });
 
@@ -942,7 +1024,8 @@ export function SetupWizardPage(): JSX.Element {
         <button
           type="button"
           onClick={() => setIsConfigModalOpen(true)}
-          className="inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-900"
+          disabled={isOpenClawOnline || isRunning || startMutation.isPending}
+          className="inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
         >
           一键配置
         </button>
@@ -1250,36 +1333,40 @@ export function SetupWizardPage(): JSX.Element {
                 </div>
 
                 <div className="mt-3 flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowOpenClawEnvCheck(false);
-                      startOpenClawDeploy();
-                    }}
-                    disabled={isAnyDeploying}
-                    className="w-full rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {openClawDeployState.isDeploying ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        部署中...
-                      </span>
-                    ) : (
-                      '一键部署 OpenClaw'
-                    )}
-                  </button>
+                  {!openClawDeployState.result ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowOpenClawEnvCheck(false);
+                          startOpenClawDeploy();
+                        }}
+                        disabled={isAnyDeploying || isOpenClawOnline}
+                        className="w-full rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {openClawDeployState.isDeploying ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            部署中...
+                          </span>
+                        ) : (
+                          '一键部署 OpenClaw'
+                        )}
+                      </button>
 
-                  {!showOpenClawEnvCheck && !openClawDeployState.isDeploying && !openClawDeployState.result && !openClawDeployState.error ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowOpenClawEnvCheck(!showOpenClawEnvCheck)}
-                      className="text-xs text-slate-500 hover:text-slate-700 underline"
-                    >
-                      部署前检查清单
-                    </button>
+                      {!showOpenClawEnvCheck && !openClawDeployState.isDeploying && !openClawDeployState.error ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowOpenClawEnvCheck(!showOpenClawEnvCheck)}
+                          className="text-xs text-slate-500 hover:text-slate-700 underline"
+                        >
+                          部署前检查清单
+                        </button>
+                      ) : null}
+                    </>
                   ) : null}
 
                   {showOpenClawEnvCheck ? (
@@ -1409,36 +1496,40 @@ export function SetupWizardPage(): JSX.Element {
                 </div>
 
                 <div className="mt-3 flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowOpenCodeEnvCheck(false);
-                      startOpenCodeInstall();
-                    }}
-                    disabled={isAnyDeploying}
-                    className="w-full rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {openCodeInstallState.isInstalling ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        安装中...
-                      </span>
-                    ) : (
-                      '一键安装 OpenCode'
-                    )}
-                  </button>
+                  {!openCodeInstallState.result ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowOpenCodeEnvCheck(false);
+                          startOpenCodeInstall();
+                        }}
+                        disabled={isAnyDeploying}
+                        className="w-full rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {openCodeInstallState.isInstalling ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            安装中...
+                          </span>
+                        ) : (
+                          '一键安装 OpenCode'
+                        )}
+                      </button>
 
-                  {!showOpenCodeEnvCheck && !openCodeInstallState.isInstalling && !openCodeInstallState.result && !openCodeInstallState.error ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowOpenCodeEnvCheck(!showOpenCodeEnvCheck)}
-                      className="text-xs text-slate-500 hover:text-slate-700 underline"
-                    >
-                      安装前检查清单
-                    </button>
+                      {!showOpenCodeEnvCheck && !openCodeInstallState.isInstalling && !openCodeInstallState.error ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowOpenCodeEnvCheck(!showOpenCodeEnvCheck)}
+                          className="text-xs text-slate-500 hover:text-slate-700 underline"
+                        >
+                          安装前检查清单
+                        </button>
+                      ) : null}
+                    </>
                   ) : null}
 
                   {showOpenCodeEnvCheck ? (
@@ -1589,6 +1680,7 @@ export function SetupWizardPage(): JSX.Element {
         isStartPending={startMutation.isPending}
         onExecute={() => startMutation.mutate()}
         startErrorMessage={startErrorMessage}
+        isOpenClawOnline={isOpenClawOnline}
       />
     </section>
   );
