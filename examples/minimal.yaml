@@ -1,0 +1,9 @@
+# clawkit 最小配置示例
+# 只包含必填项，适合快速开始
+
+projects:
+  - key: my-app
+    path: /path/to/my/app
+
+openClaw:
+  webhookToken: your-webhook-token-here
