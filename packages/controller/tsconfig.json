@@ -2,7 +2,13 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "baseUrl": ".",
+    "paths": {
+      "@clawkit/pipeline": ["../pipeline/dist/index"],
+      "@clawkit/plugin-core": ["../plugin-core/dist/index"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "tests", "src/**/__tests__"]

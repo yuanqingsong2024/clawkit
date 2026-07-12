@@ -158,20 +158,27 @@ clawkit 是一个用于一键部署、配置并串联 OpenClaw 与 OpenCode 的�
 
 ## 当前状态
 
-**阶段：Manifest 配置模型与 CLI 骨架阶段**
+**阶段：MVP 已完成，具备生产级主链路能力**
 
 已完成：
-- Manifest schema 与拓扑约束
-- 三种拓扑示例配置
-- CLI 骨架命令（init / doctor / plan / apply / heal）
-- 渲染输入结构预留
+- ✅ CLI 命令（init / doctor / plan / apply / heal）
+- ✅ Controller 任务调度与 HTTP API
+- ✅ Worker 任务执行节点（注册、心跳、拉取任务、执行、结果回传）
+- ✅ Claude Code webhook 接入与协议解析
+- ✅ TaskDraft / TaskMemory / PromptDraft 草稿与审批流
+- ✅ Web Console 轻量控制台（总览、配置、部署、修复、状态、任务中心、Setup 向导）
+- ✅ SQLite 持久化
+- ✅ OpenCode 执行链路（含 placeholder fallback）
+- ✅ 三种拓扑示例配置（all-in-one / hybrid / split）
+- ✅ 一键部署脚本与烟雾测试
+- ✅ Controller 多端点支持（HTTP REST / SSE 实时日志）
 
-未实现：
-- 业务逻辑
-- 网络通信
-- 真实部署执行
-- 任务调度
+已知限制：
+- ⚠️ 单 worker 模式（多 worker 负载均衡在 v1.0 实现）
+- ⚠️ manifest 保存后需手动重启服务生效（配置热重载在 v0.3 实现）
+- ⚠️ 无 WebSocket 实时日志（WebSocket 在 v0.3 实现）
+- ⚠️ 无内置用户认证（基础认证在 v1.0 实现）
 
-## 后续规划
+详见 [roadmap.md](./roadmap.md)
 
 详见 [roadmap.md](./roadmap.md)

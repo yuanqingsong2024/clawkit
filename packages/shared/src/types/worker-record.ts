@@ -28,6 +28,21 @@ export interface WorkerRecord {
   connectMode: 'pull' | 'push';
   /** Worker 标签，用于任务分配 */
   tags: string[];
+  /** Worker 结构化标签，供 Runtime 接入做只读判断 */
+  labels?: Record<string, string | boolean>;
+  /** Worker 能力列表 */
+  capabilities?: string[];
+  /** 单 worker 最大并发数 */
+  maxConcurrency?: number;
+  /** 当前运行中的任务数 */
+  runningCount?: number;
+  /** 风险策略 */
+  riskPolicy?: {
+    allowedRiskLevels: string[];
+    blockedRiskLevels: string[];
+  };
+  /** 是否处于维护状态 */
+  maintenance?: boolean;
   /** 支持的项目 key 列表 */
   supportedProjects: string[];
   /** Worker 当前状态 */
@@ -56,6 +71,12 @@ export interface WorkerRegisterRequest {
   connectMode: 'pull' | 'push';
   /** Worker 标签 */
   tags: string[];
+  /** Worker 结构化标签 */
+  labels?: Record<string, string | boolean>;
+  /** Worker 能力列表 */
+  capabilities?: string[];
+  /** 单 worker 最大并发数 */
+  maxConcurrency?: number;
   /** 支持的项目 key 列表 */
   supportedProjects: string[];
 }

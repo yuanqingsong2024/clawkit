@@ -184,12 +184,83 @@ tail -f ~/.opencode/opencode.log
 - 推荐做法：选择 `installMode=skip` 或 `external`，并由你自己负责安装路径、启动方式与日志管理。
 - `installMode=local` 下不提供“二进制路径/日志路径参数化”的 manifest 字段；如需自定义，请通过你自己的启动脚本与运维方式实现。
 
-### 6.2 与 worker `projects.openCode.port` 的关系
+### 6.2 推荐架构：共享单一 OpenCode 服务
+
+**重要**：推荐使用全局 `openCodeBaseUrl` 配置，让所有项目共享一个 OpenCode 服务实例。
+
+**为什么共享？**
+- OpenCode 是重量级服务，每个实例会消耗大量资源
+- OpenCode 本身通过 `directory` 参数和 session 机制天然支持多项目隔离
+- 简化运维：只需启动和监控一个服务
+
+**配置方式**：
+
+```yaml
+# 推荐：全局配置，所有项目共享
+services:
+  openCode:
+    node: "local-dev"
+    installMode: "local"
+    publicUrl: "http://127.0.0.1:4096"
+
+workers:
+  - id: "local-worker"
+    projects:
+      - key: "project-a"
+        repoPath: "/path/to/project-a"
+        openCode:
+          agent: "build"
+          # 不配置 port，使用全局 OpenCode 服务
+      
+      - key: "project-b"
+        repoPath: "/path/to/project-b"
+        openCode:
+          agent: "build"
+          # 不配置 port，使用全局 OpenCode 服务
+```
+
+**何时需要项目独立端口？**
+
+只有在以下特殊场景下才需要为项目配置独立的 `port`：
+- 不同项目需要不同版本的 OpenCode
+- 不同项目有严格的资源隔离要求（如隔离环境变量）
+
+```yaml
+# 不推荐：项目独立端口（仅特殊场景）
+workers:
+  - id: "local-worker"
+    projects:
+      - key: "legacy-project"
+        repoPath: "/path/to/legacy"
+        openCode:
+          port: 4096  # 使用旧版 OpenCode
+          agent: "build"
+      
+      - key: "new-project"
+        repoPath: "/path/to/new"
+        openCode:
+          port: 4097  # 使用新版 OpenCode
+          agent: "build"
+```
+
+### 6.3 与 worker 的连接逻辑
 
 worker 会使用项目配置中的 `projects[*].openCode.port` 连接 OpenCode 服务端口。
 
 - `installMode=local` 固定启动在 `4096`：建议把相关项目的 `openCode.port` 也配置为 `4096`。
 - 如果你配置了其他端口，worker 会按配置去连接，可能与一键安装启动的端口不一致，从而导致连接失败并触发退化。
+
+### 6.3 与 worker 的连接逻辑
+
+worker 连接 OpenCode 服务的优先级：
+1. **优先**：使用全局配置 `OPENCODE_SERVER_BASE_URL` 环境变量
+2. **其次**：使用全局 `services.openCode.publicUrl` 配置
+3. **最后**：如果项目配置了 `openCode.port`，则使用 `http://127.0.0.1:<port>`
+
+推荐做法：
+- 在环境变量或 manifest 全局配置中设置 OpenCode 服务地址
+- 不在项目级别配置 `port` 字段
+- 这样所有项目自动共享同一个 OpenCode 服务
 
 ## 7. 参考资源
 

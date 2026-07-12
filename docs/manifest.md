@@ -4,7 +4,31 @@
 
 manifest 是 clawkit 的统一输入模型，CLI、controller、worker 与部署文件生成都围绕它展开。
 
-## 2. 顶层结构
+当前仓库同时支持两种配置形态：
+
+1. **简化配置**：推荐新用户使用，只保留 `projects` 和 `openClaw` 等核心字段
+2. **完整配置**：用于高级场景，包含 `profile / nodes / services / workers / runtime` 等完整结构
+
+## 2. 推荐的简化配置
+
+推荐先从下面的简化配置开始：
+
+```yaml
+projects:
+  - key: my-app
+    path: /path/to/my-app
+    autoExecute: false
+    dangerousOps:
+      - delete
+      - drop
+
+openClaw:
+  webhookToken: your-webhook-token
+```
+
+简化配置会在 `doctor / plan / apply / start` 内部自动展开为完整配置。
+
+## 3. 完整配置顶层结构
 
 ```yaml
 profile:
@@ -16,7 +40,7 @@ notify:
 deploy:
 ```
 
-## 3. 核心字段
+## 4. 完整配置核心字段
 
 ### 3.1 profile
 
@@ -176,7 +200,7 @@ runtime:
 
 `deploy` 用于表达部署超时、重试和健康检查间隔等策略。
 
-## 4. 拓扑约束
+## 5. 拓扑约束
 
 ### all-in-one
 
@@ -192,18 +216,18 @@ runtime:
 - controller 与 OpenClaw 必须在同一个控制面节点
 - 至少一个 worker 位于独立执行节点
 
-## 5. 当前实现关系
+## 6. 当前实现关系
 
 manifest 当前会被这些能力直接消费：
 
-- `init` 生成
+- `init` 生成（默认生成简化配置，`--full` 生成完整配置）
 - `doctor` 校验
 - `plan` 预览
 - `apply` 生成部署文件
 - `heal` 识别修复问题
 - controller / worker 运行时加载
 
-## 6. 当前边界
+## 7. 当前边界
 
 manifest 负责描述“声明式配置”，但不直接等于最终系统文件。
 
@@ -213,6 +237,6 @@ manifest 负责描述“声明式配置”，但不直接等于最终系统文�
 - systemd 文件由 `apply` 生成
 - OpenClaw 配置由 `apply` 生成
 
-## 7. 结论
+## 8. 结论
 
 当前 manifest 已经不是单纯的“模型设计产物”，而是首个 MVP 的真实运行输入。

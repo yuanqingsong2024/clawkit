@@ -11,11 +11,16 @@ services:
     node: local-dev
     port: 8787
     apiPrefix: /api
+    publicUrl: http://127.0.0.1:8787
   openClaw:
     node: local-dev
-    deployMode: local
+    deployMode: external
     publicUrl: http://127.0.0.1:18000
     apiKey: clawkit-local-openclaw-token
+  openCode:
+    node: local-dev
+    installMode: external
+    publicUrl: http://127.0.0.1:4096
 workers:
   - id: local-worker
     node: local-dev
@@ -26,7 +31,6 @@ workers:
         repoPath: .
         baseBranch: main
         openCode:
-          port: 4096
           agent: build
           mode: default
 runtime:

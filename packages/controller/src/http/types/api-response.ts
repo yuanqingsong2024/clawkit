@@ -44,3 +44,16 @@ export function sendSuccess<T>(
   const statusCode = options.statusCode ?? 200;
   return reply.status(statusCode).send(buildSuccessResponse(options.code, options.message, options.data));
 }
+
+export function sendFailure(
+  reply: FastifyReply,
+  options: {
+    statusCode?: number;
+    code: string;
+    message: string;
+    details: unknown;
+  },
+): FastifyReply {
+  const statusCode = options.statusCode ?? 400;
+  return reply.status(statusCode).send(buildFailureResponse(options.code, options.message, options.details));
+}

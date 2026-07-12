@@ -21,9 +21,10 @@
 
 ### 2.1 选择配置文件
 
-可直接使用仓库示例：
+可直接使用仓库示例，推荐优先从简化配置开始：
 
-- 单机模式：`examples/all-in-one.yaml`
+- 简化单机模式：`examples/simple.yaml`
+- 最小配置：`examples/minimal.yaml`
 - 混合模式：`examples/hybrid.yaml`
 - 双机模式：`examples/split.yaml`
 
@@ -37,7 +38,7 @@ pnpm build
 ### 2.3 启动 Controller
 
 ```bash
-export CLAWKIT_MANIFEST_PATH="$(pwd)/examples/all-in-one.yaml"
+export CLAWKIT_MANIFEST_PATH="$(pwd)/examples/simple.yaml"
 export OPENCLAW_WEBHOOK_TOKEN="replace-me"
 pnpm --filter @clawkit/controller start
 ```

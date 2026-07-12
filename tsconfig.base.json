@@ -11,14 +11,15 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "declaration": true,
-    "paths": {
-      "@clawkit/cli/services": ["packages/cli/services.d.ts"]
-    },
-    "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    "incremental": true,
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "paths": {
+      "@clawkit/pipeline": ["./packages/pipeline/src/index.ts"],
+      "@clawkit/plugin-core": ["./packages/plugin-core/src/index.ts"]
+    }
   },
   "exclude": ["node_modules", "dist"]
 }

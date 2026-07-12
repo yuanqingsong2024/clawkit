@@ -18,13 +18,14 @@ function toneClassName(tone: BadgeTone): string {
   }
 }
 
-export function Badge(props: { tone?: BadgeTone; children: ReactNode }): JSX.Element {
+export function Badge(props: { tone?: BadgeTone; className?: string; children: ReactNode }): JSX.Element {
   const tone = props.tone ?? 'neutral';
   return (
     <span
       className={[
         'inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset',
         toneClassName(tone),
+        props.className ?? '',
       ].join(' ')}
     >
       {props.children}

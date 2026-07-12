@@ -14,4 +14,11 @@ export enum ControllerErrorCode {
   WORKER_NOT_FOUND = 'controller.worker_not_found',
   NO_AVAILABLE_WORKER = 'controller.no_available_worker',
   PROJECT_CONFIG_NOT_FOUND = 'controller.project_config_not_found',
+  AUTH_UNAUTHORIZED = 'controller.auth_unauthorized',
+  AUTH_FORBIDDEN = 'controller.auth_forbidden',
+  INVALID_REQUEST = 'controller.invalid_request',
+  DUPLICATE_REQUEST = 'controller.duplicate_request',
+  DRY_RUN_UNSUPPORTED = 'controller.dry_run_unsupported',
+  RESULT_PENDING = 'controller.result_pending',
+  CANCEL_UNSUPPORTED = 'controller.cancel_unsupported',
 }

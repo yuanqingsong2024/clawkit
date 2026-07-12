@@ -7,14 +7,61 @@ interface IngestTaskBody {
   text: string;
 }
 
+interface TasksQueryParams {
+  page?: string;
+  pageSize?: string;
+  status?: string;
+  projectKey?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
 export function buildTasksRoutes(apiService: ControllerApiService): FastifyPluginAsync {
   return async (app: FastifyInstance): Promise<void> => {
-    app.get('/', async (_request, reply) => {
-      const result = apiService.listTasks();
+    app.get<{ Querystring: TasksQueryParams }>('/', async (request, reply) => {
+      const { page = '1', pageSize = '20', status, projectKey, startDate, endDate } = request.query;
+      
+      const pageNum = parseInt(page, 10);
+      const pageSizeNum = parseInt(pageSize, 10);
+      
+      let allTasks = apiService.listTasks().tasks;
+      
+      if (status) {
+        allTasks = allTasks.filter(task => task.status === status);
+      }
+      
+      if (projectKey) {
+        allTasks = allTasks.filter(task => task.projectKey === projectKey);
+      }
+      
+      if (startDate) {
+        const start = new Date(startDate);
+        allTasks = allTasks.filter(task => new Date(task.createdAt) >= start);
+      }
+      
+      if (endDate) {
+        const end = new Date(endDate);
+        allTasks = allTasks.filter(task => new Date(task.createdAt) <= end);
+      }
+      
+      const total = allTasks.length;
+      const totalPages = Math.ceil(total / pageSizeNum);
+      const startIndex = (pageNum - 1) * pageSizeNum;
+      const endIndex = startIndex + pageSizeNum;
+      const paginatedTasks = allTasks.slice(startIndex, endIndex);
+      
       sendSuccess(reply, {
         code: 'controller.tasks.list_fetched',
         message: '任务列表查询成功',
-        data: result,
+        data: {
+          tasks: paginatedTasks,
+          pagination: {
+            page: pageNum,
+            pageSize: pageSizeNum,
+            total,
+            totalPages,
+          },
+        },
       });
     });
 

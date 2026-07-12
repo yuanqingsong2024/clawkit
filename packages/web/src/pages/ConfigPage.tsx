@@ -5,8 +5,10 @@ import { Accordion } from '../components/ui/Accordion';
 import { Card } from '../components/ui/Card';
 import { CodeBlock } from '../components/ui/CodeBlock';
 import { Badge } from '../components/ui/Badge';
+import { PageHeader } from '../components/ui/PageHeader';
 import { ErrorNotice, InfoNotice } from '../components/ui/Notice';
 import { FileBrowserModal } from '../components/FileBrowserModal';
+import { inputClassName, primaryButtonClassName, secondaryButtonClassName } from '../components/ui/styles';
 import { apiGet, apiPut } from '../lib/api';
 import { formatDateTime } from '../lib/format';
 
@@ -102,18 +104,12 @@ export function ConfigPage(): JSX.Element {
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">配置</h1>
-          <div className="mt-1 text-sm text-slate-600">查看并编辑当前 manifest（YAML）。</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => manifestQuery.refetch()}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={manifestQuery.isFetching}
-          >
+      <PageHeader
+        title="配置"
+        description="查看和编辑 manifest（YAML）。"
+        actions={
+          <>
+          <button type="button" onClick={() => manifestQuery.refetch()} className={secondaryButtonClassName} disabled={manifestQuery.isFetching}>
             {manifestQuery.isFetching ? '刷新中…' : '刷新'}
           </button>
           <button
@@ -122,13 +118,14 @@ export function ConfigPage(): JSX.Element {
               setSaveHint(null);
               saveMutation.mutate({ yamlText });
             }}
-            className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className={primaryButtonClassName}
             disabled={saveMutation.isPending || !isDirty || yamlText.trim().length === 0}
           >
             {saveMutation.isPending ? '保存中…' : '保存'}
           </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {controllerConfigQuery.isLoading ? <InfoNotice message="正在加载 controller 配置…" /> : null}
       {controllerConfigQuery.error ? (
@@ -150,10 +147,10 @@ export function ConfigPage(): JSX.Element {
         saveHint.startsWith('保存成功') ? <InfoNotice title="保存结果" message={saveHint} /> : <ErrorNotice title="保存结果" message={saveHint} />
       ) : null}
 
-      {runtimeNotice ? <InfoNotice title="运行态提示" message={runtimeNotice} /> : null}
+      {runtimeNotice ? <InfoNotice compact title="运行态提示" message={runtimeNotice} /> : null}
 
       {controllerConfigQuery.data ? (
-        <Card title="controller 配置">
+        <Card compact title="controller 配置">
           <div className="space-y-4">
             <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="sm:col-span-2">
@@ -179,18 +176,18 @@ export function ConfigPage(): JSX.Element {
                     setPathSaveHint(null);
                     setManifestPathInput(e.target.value);
                   }}
-                  className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                  className={inputClassName}
                   placeholder="请输入 manifest YAML 的绝对路径或相对路径"
                 />
                 <button
                   type="button"
                   onClick={() => setIsBrowserOpen(true)}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
+                  className={secondaryButtonClassName}
                 >
                   浏览
                 </button>
               </div>
-              <div className="text-xs text-slate-500">保存路径后会立即刷新 controller 读取的 manifest；worker 仍需手动重启。</div>
+              <div className="text-xs text-slate-500 leading-5">保存后 controller 会立即重读，worker 仍需手动重启。</div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -200,7 +197,7 @@ export function ConfigPage(): JSX.Element {
                   setPathSaveHint(null);
                   pathMutation.mutate({ manifestPath: manifestPathInput });
                 }}
-                className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className={primaryButtonClassName}
                 disabled={pathMutation.isPending || !isPathDirty || manifestPathInput.trim().length === 0}
               >
                 {pathMutation.isPending ? '保存中…' : '保存路径'}
@@ -212,6 +209,7 @@ export function ConfigPage(): JSX.Element {
 
       {manifestQuery.data ? (
         <Card
+          compact
           title="基本信息"
           actions={
             isDirty ? (
@@ -274,7 +272,7 @@ export function ConfigPage(): JSX.Element {
         ]}
       />
 
-      <Card title="manifest YAML">
+      <Card compact title="manifest YAML">
         <div className="space-y-3">
           {controllerConfigQuery.data?.manifestPath ? (
             <>
@@ -290,7 +288,7 @@ export function ConfigPage(): JSX.Element {
                 spellCheck={false}
               />
 
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 leading-5">
                 <div>
                   {yamlText.trim().length === 0 ? '内容为空，将无法保存。' : `字符数：${yamlText.length}`}
                 </div>
@@ -302,7 +300,7 @@ export function ConfigPage(): JSX.Element {
               ) : null}
             </>
           ) : (
-            <InfoNotice title="尚未配置 manifest 路径" message="请先在上方保存 manifest 路径，随后才能读取和编辑 YAML 内容。" />
+            <InfoNotice title="尚未配置 manifest 路径" message="先保存 manifest 路径，再读取和编辑 YAML。" />
           )}
         </div>
       </Card>
@@ -324,6 +322,7 @@ export function ConfigPage(): JSX.Element {
         isOpen={isBrowserOpen}
         onClose={() => setIsBrowserOpen(false)}
         onSelect={handleSelectPath}
+        initialPath={manifestPathInput.trim() || controllerConfigQuery.data?.manifestPath || ''}
       />
     </section>
   );

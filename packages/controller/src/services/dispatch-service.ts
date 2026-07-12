@@ -4,10 +4,12 @@ import {
   ControllerErrorCode,
   DispatchRecord,
   DispatchStatus,
+  TaskPriority,
   TaskStatus,
   type TaskExecutionBoundary,
   WorkerPullTaskResponse,
   WorkerSubmitResultRequest,
+  WorkerRecord,
 } from '@clawkit/shared';
 
 import type { TaskDraft } from '../models/task-draft';
@@ -15,6 +17,7 @@ import type { TaskMemory } from '../models/task-memory';
 import type { OutputContract } from './prompt-compiler';
 import type { ProjectDispatchConfig } from './project-registry';
 import type { WorkerRegistry } from './worker-registry';
+import type { LoadBalancerService } from './load-balancer.service';
 
 interface DispatchProjectLookup {
   getProject(projectKey: string): ProjectDispatchConfig | undefined;
@@ -31,6 +34,8 @@ export class DispatchService {
   private dispatches: Map<string, DispatchRecord> = new Map();
   private taskToDispatch: Map<string, string> = new Map();
   private workerToTask: Map<string, string> = new Map();
+  private taskQueue: string[] = [];
+  private taskAvailableListeners: Set<(workerId: string) => void> = new Set();
 
   constructor(
     private workerRegistry: WorkerRegistry,
@@ -39,7 +44,33 @@ export class DispatchService {
     private taskStatusUpdater: { updateTaskStatus(taskId: string, status: TaskStatus): void },
     private projectRegistry?: DispatchProjectLookup,
     private promptCompiler?: DispatchPromptCompiler,
+    private loadBalancerService?: LoadBalancerService,
   ) {}
+
+  /**
+   * 设置负载均衡服务（可选，用于多 worker 场景）
+   */
+  setLoadBalancerService(service: LoadBalancerService): void {
+    this.loadBalancerService = service;
+  }
+
+  onTaskAvailable(listener: (workerId: string) => void): void {
+    this.taskAvailableListeners.add(listener);
+  }
+
+  offTaskAvailable(listener: (workerId: string) => void): void {
+    this.taskAvailableListeners.delete(listener);
+  }
+
+  private notifyTaskAvailable(workerId: string): void {
+    this.taskAvailableListeners.forEach(listener => {
+      try {
+        listener(workerId);
+      } catch (error) {
+        console.error('任务通知监听器执行失败:', error);
+      }
+    });
+  }
 
   dispatchTask(taskId: string): DispatchRecord {
     const taskDraft = this.taskDraftService.getTaskDraft(taskId);
@@ -55,11 +86,27 @@ export class DispatchService {
 
     const projectConfig = this.requireProjectConfig(taskDraft.projectKey);
 
-    const worker = this.workerRegistry.findWorkerForProject(taskDraft.projectKey);
-    if (!worker) {
-      throw new Error(
-        `${ControllerErrorCode.NO_AVAILABLE_WORKER}：没有可用的 worker 处理项目 ${taskDraft.projectKey}`,
-      );
+    // 使用负载均衡服务选择 worker（如果可用）
+    let assignedWorker: WorkerRecord | undefined;
+    let workerNote = '';
+
+    if (this.loadBalancerService) {
+      const lbResult = this.loadBalancerService.selectWorker(taskId, taskDraft.projectKey);
+      if (lbResult.success && lbResult.selectedWorkerId) {
+        assignedWorker = this.workerRegistry.getWorker(lbResult.selectedWorkerId);
+        workerNote = `（负载均衡策略：${this.loadBalancerService.getConfig().strategy}）`;
+      }
+    }
+
+    // 如果负载均衡未选择 worker，回退到原来的查找逻辑
+    if (!assignedWorker) {
+      const fallbackWorker = this.workerRegistry.findWorkerForProject(taskDraft.projectKey);
+      assignedWorker = fallbackWorker ?? undefined;
+      workerNote = '（回退：直接查找支持该项目的 worker）';
+    }
+
+    if (!assignedWorker) {
+      throw new Error(`${ControllerErrorCode.WORKER_NOT_FOUND}：没有可用 worker 支持项目 ${taskDraft.projectKey}`);
     }
 
     const dispatchId = randomUUID();
@@ -68,22 +115,25 @@ export class DispatchService {
     const dispatch: DispatchRecord = {
       dispatchId,
       taskId,
-      workerId: worker.workerId,
+      workerId: assignedWorker.workerId,
       dispatchStatus: DispatchStatus.DISPATCHED,
       createdAt: now,
       updatedAt: now,
-      note: `派发到 worker ${worker.name} (${worker.workerId})`,
+      note: `任务已加入队列，预分配给 worker ${assignedWorker.workerId}${workerNote}`,
     };
 
     this.dispatches.set(dispatchId, dispatch);
     this.taskToDispatch.set(taskId, dispatchId);
-    this.workerToTask.set(worker.workerId, taskId);
+    this.addTaskToQueue(taskId);
 
-    this.workerRegistry.markWorkerBusy(worker.workerId, taskId);
     this.taskStatusUpdater.updateTaskStatus(taskId, TaskStatus.DISPATCHED);
+
+    [assignedWorker].forEach((worker: WorkerRecord) => {
+      this.notifyTaskAvailable(worker.workerId);
+    });
     this.markExecutionSummary(taskId, {
       status: 'not_started',
-      note: `任务已派发，等待 worker ${worker.workerId} 拉取`,
+      note: `任务已派发，等待 worker 拉取`,
       changedFiles: [],
       commands: [],
       testResult: '尚未执行',
@@ -96,15 +146,122 @@ export class DispatchService {
     return dispatch;
   }
 
+  dispatchTaskToWorker(taskId: string, workerId: string): DispatchRecord {
+    const taskDraft = this.taskDraftService.getTaskDraft(taskId);
+    if (!taskDraft) {
+      throw new Error(`${ControllerErrorCode.TASK_NOT_FOUND}：任务 ${taskId} 不存在`);
+    }
+
+    if (taskDraft.status !== TaskStatus.APPROVED) {
+      throw new Error(
+        `${ControllerErrorCode.INVALID_TASK_STATUS_TRANSITION}：只有 approved 状态的任务才能派发，当前状态：${taskDraft.status}`,
+      );
+    }
+
+    const assignedWorker = this.workerRegistry.getWorker(workerId);
+    if (!assignedWorker) {
+      throw new Error(`${ControllerErrorCode.WORKER_NOT_FOUND}：Worker ${workerId} 未注册`);
+    }
+
+    const dispatchId = randomUUID();
+    const now = new Date();
+
+    const dispatch: DispatchRecord = {
+      dispatchId,
+      taskId,
+      workerId: assignedWorker.workerId,
+      dispatchStatus: DispatchStatus.DISPATCHED,
+      createdAt: now,
+      updatedAt: now,
+      note: `任务已加入队列，目标 worker ${assignedWorker.workerId}`,
+    };
+
+    this.dispatches.set(dispatchId, dispatch);
+    this.taskToDispatch.set(taskId, dispatchId);
+    this.addTaskToQueue(taskId);
+    this.taskStatusUpdater.updateTaskStatus(taskId, TaskStatus.DISPATCHED);
+    this.notifyTaskAvailable(assignedWorker.workerId);
+    this.markExecutionSummary(taskId, {
+      status: 'not_started',
+      note: `任务已派发，等待 worker 拉取`,
+      changedFiles: [],
+      commands: [],
+      testResult: '尚未执行',
+      rawOutputSummary: `目标 worker：${assignedWorker.workerId}`,
+      parseStatus: 'text_only',
+      placeholderExecution: false,
+      lastUpdatedAt: new Date(),
+    });
+
+    return dispatch;
+  }
+
+  private addTaskToQueue(taskId: string): void {
+    const taskDraft = this.taskDraftService.getTaskDraft(taskId);
+    if (!taskDraft) return;
+
+    const priorityOrder: Record<TaskPriority, number> = { 
+      [TaskPriority.URGENT]: 0,
+      [TaskPriority.HIGH]: 1, 
+      [TaskPriority.NORMAL]: 2, 
+      [TaskPriority.LOW]: 3 
+    };
+    const newTaskPriority = priorityOrder[taskDraft.priority];
+
+    let insertIndex = this.taskQueue.length;
+    for (let i = 0; i < this.taskQueue.length; i++) {
+      const existingTaskId = this.taskQueue[i];
+      const existingTask = this.taskDraftService.getTaskDraft(existingTaskId);
+      if (!existingTask) continue;
+
+      const existingPriority = priorityOrder[existingTask.priority];
+      if (newTaskPriority < existingPriority) {
+        insertIndex = i;
+        break;
+      }
+      if (newTaskPriority === existingPriority && taskDraft.createdAt < existingTask.createdAt) {
+        insertIndex = i;
+        break;
+      }
+    }
+
+    this.taskQueue.splice(insertIndex, 0, taskId);
+  }
+
   pullTask(workerId: string): WorkerPullTaskResponse {
-    const taskId = this.workerToTask.get(workerId);
+    const worker = this.workerRegistry.getWorker(workerId);
+    if (!worker) {
+      return { hasTask: false };
+    }
+
+    let taskId: string | undefined;
+    for (let i = 0; i < this.taskQueue.length; i++) {
+      const candidateTaskId = this.taskQueue[i];
+      const taskDraft = this.taskDraftService.getTaskDraft(candidateTaskId);
+      if (!taskDraft) {
+        this.taskQueue.splice(i, 1);
+        i--;
+        continue;
+      }
+
+      if (worker.supportedProjects.includes(taskDraft.projectKey) || worker.supportedProjects.includes('*')) {
+        taskId = candidateTaskId;
+        this.taskQueue.splice(i, 1);
+        break;
+      }
+    }
+
     if (!taskId) {
       return { hasTask: false };
     }
 
+    this.workerToTask.set(workerId, taskId);
+    this.workerRegistry.markWorkerBusy(workerId, taskId);
+
     const taskDraft = this.taskDraftService.getTaskDraft(taskId);
     if (!taskDraft) {
       this.workerToTask.delete(workerId);
+      this.workerRegistry.markWorkerIdle(workerId);
       return { hasTask: false };
     }
 
@@ -112,8 +269,10 @@ export class DispatchService {
     if (dispatchId) {
       const dispatch = this.dispatches.get(dispatchId);
       if (dispatch) {
+        dispatch.workerId = workerId;
         dispatch.dispatchStatus = DispatchStatus.ACCEPTED;
         dispatch.updatedAt = new Date();
+        dispatch.note = `已分配给 worker ${workerId}`;
       }
     }
 
@@ -203,6 +362,10 @@ export class DispatchService {
   getDispatchByTaskId(taskId: string): DispatchRecord | undefined {
     const dispatchId = this.taskToDispatch.get(taskId);
     return dispatchId ? this.dispatches.get(dispatchId) : undefined;
+  }
+
+  getDispatchById(dispatchId: string): DispatchRecord | undefined {
+    return this.dispatches.get(dispatchId);
   }
 
   getAllDispatches(): DispatchRecord[] {

@@ -1,76 +1,193 @@
-import { WorkerStatus } from '@clawkit/shared';
+/**
+ * Worker 主类
+ * 负责任务拉取、执行和结果提交
+ */
+
+import { createLogger, WorkerStatus } from '@clawkit/shared';
 import type { TaskExecutor } from '@clawkit/shared';
 
 import type { WorkerConfig } from './config';
 import { loadWorkerConfig } from './config';
-import { OpenCodeExecutor } from './executors/open-code-executor';
+import { ExecutorFactoryService, getExecutorFactoryService } from './services/executor-factory-service';
 import { HeartbeatService } from './services/heartbeat-service';
 import { WorkerRegistrationService } from './services/registration-service';
 import { ResultSubmitService } from './services/result-submit-service';
 import { TaskPullService } from './services/task-pull-service';
+import { TaskStreamService } from './services/task-stream-service';
 
 export class Worker {
   private config: WorkerConfig;
+  private logger = createLogger('Worker');
   private registrationService: WorkerRegistrationService;
   private heartbeatService: HeartbeatService;
   private taskPullService: TaskPullService;
   private resultSubmitService: ResultSubmitService;
+  private taskStreamService: TaskStreamService;
+  private executorFactoryService: ExecutorFactoryService;
   private executor: TaskExecutor;
+  private fallbackExecutor: TaskExecutor;
 
-  private currentStatus: WorkerStatus = WorkerStatus.IDLE;
-  private currentTaskId?: string;
+  private runningTasks: Map<string, Promise<void>> = new Map();
   private pollIntervalId?: NodeJS.Timeout;
+  private useSSE = true;
 
-  constructor(config?: WorkerConfig, executor?: TaskExecutor) {
+  constructor(config?: WorkerConfig) {
     this.config = config || loadWorkerConfig();
+    
+    // 初始化执行器工厂服务
+    this.executorFactoryService = getExecutorFactoryService();
+    this.executorFactoryService.initialize();
+
     this.registrationService = new WorkerRegistrationService(this.config);
     this.heartbeatService = new HeartbeatService(
       this.config,
-      () => this.currentStatus,
-      () => this.currentTaskId,
+      () => this.getWorkerStatus(),
+      () => this.getCurrentTaskId(),
+      async () => {
+        const record = await this.registrationService.register();
+        this.logger.info(`Worker 自动重新注册成功: ${record.workerId} (${record.name})`);
+      },
     );
     this.taskPullService = new TaskPullService(this.config);
     this.resultSubmitService = new ResultSubmitService(this.config);
-    this.executor = executor ?? new OpenCodeExecutor(this.config);
+    this.taskStreamService = new TaskStreamService(
+      this.config,
+      () => this.onTaskNotification(),
+    );
+
+    // 创建默认执行器（使用 OpenCode）
+    this.executor = this.createDefaultExecutor();
+    
+    // 创建备用执行器（用于降级）
+    this.fallbackExecutor = this.createFallbackExecutor();
+  }
+
+  /**
+   * 创建默认执行器
+   * 根据配置选择合适的执行器类型
+   */
+  private createDefaultExecutor(): TaskExecutor {
+    const executorType = this.config.openCode.mode === 'cli' ? 'claude-code' : 'opencode';
+    
+    try {
+      return this.executorFactoryService.createExecutor({
+        type: executorType,
+        config: {
+          baseUrl: this.config.openCode.server.baseUrl,
+          passwordEnv: this.config.openCode.server.passwordEnv,
+          timeoutMs: this.config.openCode.timeoutMs,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`创建执行器 ${executorType} 失败: ${error}，使用备用执行器`);
+      return this.fallbackExecutor;
+    }
+  }
+
+  /**
+   * 创建备用执行器
+   * 用于当主执行器不可用时降级
+   */
+  private createFallbackExecutor(): TaskExecutor {
+    try {
+      return this.executorFactoryService.createExecutor({
+        type: 'placeholder',
+        config: {},
+      });
+    } catch {
+      // 如果连备用执行器都创建失败，返回 placeholder
+      const { PlaceholderExecutor } = require('../executors/placeholder-executor');
+      return new PlaceholderExecutor(this.config.workerId);
+    }
+  }
+
+  /**
+   * 根据任务上下文选择执行器
+   * 优先使用任务指定的执行器类型
+   */
+  private selectExecutor(task: any): TaskExecutor {
+    const executorType = task.executorType || (this.config.openCode.mode === 'cli' ? 'claude-code' : 'opencode');
+    
+    try {
+      return this.executorFactoryService.createExecutor({
+        type: executorType,
+        config: task.executorConfig || {
+          baseUrl: this.config.openCode.server.baseUrl,
+          passwordEnv: this.config.openCode.server.passwordEnv,
+          timeoutMs: this.config.openCode.timeoutMs,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`创建执行器 ${executorType} 失败: ${error}，使用备用执行器`);
+      return this.fallbackExecutor;
+    }
+  }
+
+  private getWorkerStatus(): WorkerStatus {
+    return this.runningTasks.size > 0 ? WorkerStatus.BUSY : WorkerStatus.IDLE;
+  }
+
+  private getCurrentTaskId(): string | undefined {
+    const taskIds = Array.from(this.runningTasks.keys());
+    return taskIds.length > 0 ? taskIds[0] : undefined;
   }
 
   async start(): Promise<void> {
-    console.log(`Worker ${this.config.workerId} 启动中...`);
+    this.logger.info(`Worker ${this.config.workerId} 启动中...`);
 
     try {
       const record = await this.registrationService.register();
-      console.log(`Worker 注册成功: ${record.workerId} (${record.name})`);
+      this.logger.info(`Worker 注册成功: ${record.workerId} (${record.name})`);
 
       this.heartbeatService.start();
 
-      this.startPolling();
-
-      console.log(`Worker ${this.config.workerId} 已启动，开始轮询任务`);
+      try {
+        this.taskStreamService.start();
+        this.logger.info(`Worker ${this.config.workerId} 已启动，使用 SSE 接收任务通知`);
+      } catch (error) {
+        this.logger.warn(`SSE 连接失败，降级为轮询模式: ${error}`);
+        this.useSSE = false;
+        this.startPolling();
+        this.logger.info(`Worker ${this.config.workerId} 已启动，使用轮询模式`);
+      }
     } catch (error) {
-      console.error('Worker 启动失败:', error);
+      this.logger.error(`Worker 启动失败: ${error}`);
       throw error;
     }
   }
 
   async stop(): Promise<void> {
-    console.log(`Worker ${this.config.workerId} 停止中...`);
+    this.logger.info(`Worker ${this.config.workerId} 停止中...`);
+
+    if (this.useSSE) {
+      this.taskStreamService.stop();
+    }
+
     if (this.pollIntervalId) {
       clearInterval(this.pollIntervalId);
       this.pollIntervalId = undefined;
     }
 
     this.heartbeatService.stop();
-    console.log(`Worker ${this.config.workerId} 已停止`);
+    this.logger.info(`Worker ${this.config.workerId} 已停止`);
   }
 
   private startPolling(): void {
     this.pollIntervalId = setInterval(() => {
-      if (this.currentStatus === WorkerStatus.IDLE) {
+      if (this.runningTasks.size < this.config.maxConcurrentTasks) {
         this.pollAndExecute().catch((error) => {
-          console.error('任务轮询执行失败:', error.message);
+          this.logger.error(`任务轮询执行失败: ${error.message}`);
         });
       }
     }, this.config.pollIntervalMs);
+  }
+
+  private onTaskNotification(): void {
+    if (this.runningTasks.size < this.config.maxConcurrentTasks) {
+      this.pollAndExecute().catch((error) => {
+        this.logger.error(`任务拉取执行失败: ${error.message}`);
+      });
+    }
   }
 
   private async pollAndExecute(): Promise<void> {
@@ -82,27 +199,72 @@ export class Worker {
       }
 
       const task = response.task;
-      console.log(`拉取到任务: ${task.taskId}`);
+      this.logger.info(`拉取到任务: ${task.taskId} (当前并发: ${this.runningTasks.size + 1}/${this.config.maxConcurrentTasks})`);
 
-      this.currentStatus = WorkerStatus.BUSY;
-      this.currentTaskId = task.taskId;
+      // 根据任务选择执行器
+      const executor = this.selectExecutor(task);
+      const taskPromise = this.executeTask(task, executor);
+      this.runningTasks.set(task.taskId, taskPromise);
 
+      taskPromise.finally(() => {
+        this.runningTasks.delete(task.taskId);
+      });
+    } catch (error) {
+      this.logger.error(`任务拉取失败: ${error}`);
+    }
+  }
+
+  private async executeTask(task: any, executor: TaskExecutor): Promise<void> {
+    const timeoutMs = task.executionTimeoutMs || this.config.openCode.timeoutMs;
+    const maxRetries = task.maxRetries !== undefined ? task.maxRetries : 3;
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const result = await this.executor.execute({
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`任务执行超时（${timeoutMs}ms）`));
+          }, timeoutMs);
+        });
+
+        // 构建执行上下文（V2 格式）
+        // 兼容旧版 task.openCode 和新版 task.executorConfig
+        const executorConfig = task.executorConfig ?? {
+          baseUrl: task.openCode?.server?.baseUrl ?? task.openCode?.baseUrl,
+          port: task.openCode?.server?.port ?? task.openCode?.port ?? 4096,
+          agent: task.openCode?.agent ?? 'build',
+          mode: task.openCode?.mode ?? 'default',
+        };
+
+        const executionPromise = executor.execute({
           taskId: task.taskId,
           projectKey: task.projectKey,
           repoPath: task.repoPath,
           branchBase: task.branchBase,
-          openCode: task.openCode,
+          executorType: task.executorType ?? executor.name,
+          executorConfig,
           intent: task.intent,
-          constraints: task.constraints,
-          acceptanceCriteria: task.acceptanceCriteria,
-          sourceText: task.sourceText,
+          constraints: task.constraints ?? [],
+          acceptanceCriteria: task.acceptanceCriteria ?? [],
+          sourceText: task.sourceText ?? '',
           status: task.status,
-          executionPrompt: task.executionPrompt,
-          outputContract: task.outputContract,
-          executionBoundary: task.executionBoundary,
+          executionPrompt: task.executionPrompt ?? task.intent,
+          outputContract: task.outputContract ?? {
+            completionChecklist: [],
+            modifiedFiles: [],
+            executionCommands: [],
+            testResults: [],
+            risksAndConfirmations: [],
+          },
+          executionBoundary: task.executionBoundary ?? {
+            allowedActions: [],
+            forbiddenActions: [],
+            highRiskHandling: 'skip',
+          },
         });
+
+        const result = await Promise.race([executionPromise, timeoutPromise]);
 
         await this.resultSubmitService.submitResult({
           taskId: result.taskId,
@@ -124,33 +286,39 @@ export class Worker {
           updatedAt: result.updatedAt,
         });
 
-        console.log(`任务 ${task.taskId} 执行完成`);
+        this.logger.info(`任务 ${task.taskId} 执行完成`);
+        return;
       } catch (error) {
-        console.error(`任务 ${task.taskId} 执行失败:`, error);
+        lastError = error instanceof Error ? error : new Error(String(error));
+        const isTimeout = lastError.message.includes('任务执行超时');
 
-        await this.resultSubmitService.submitResult({
-          taskId: task.taskId,
-          status: 'failed',
-          workerId: this.config.workerId,
-          projectKey: task.projectKey,
-          summary: `任务执行失败: ${error instanceof Error ? error.message : String(error)}`,
-          placeholderExecution: false,
-          logs: [`执行失败: ${error instanceof Error ? error.message : String(error)}`],
-          changedFiles: [],
-          commands: [],
-          testResult: '未执行',
-          rawOutputSummary: error instanceof Error ? error.message : String(error),
-          parseStatus: 'parse_failed',
-          updatedAt: new Date().toISOString(),
-        });
-      } finally {
-        this.currentStatus = WorkerStatus.IDLE;
-        this.currentTaskId = undefined;
+        if (attempt < maxRetries) {
+          const delayMs = Math.min(1000 * Math.pow(2, attempt), 30000);
+          this.logger.warn(`任务 ${task.taskId} ${isTimeout ? '执行超时' : '执行失败'}，${delayMs}ms 后重试（${attempt + 1}/${maxRetries}）`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else {
+          this.logger.error(`任务 ${task.taskId} 重试 ${maxRetries} 次后仍${isTimeout ? '超时' : '失败'}`);
+        }
       }
-    } catch (error) {
-      console.error('任务拉取失败:', error);
+    }
+
+    if (lastError) {
+      const isTimeout = lastError.message.includes('任务执行超时');
+      await this.resultSubmitService.submitResult({
+        taskId: task.taskId,
+        status: 'failed',
+        workerId: this.config.workerId,
+        projectKey: task.projectKey,
+        summary: `${isTimeout ? '任务执行超时' : '任务执行失败'}（重试 ${maxRetries} 次后仍失败）: ${lastError.message}`,
+        placeholderExecution: false,
+        logs: [`${isTimeout ? '执行超时' : '执行失败'}（重试 ${maxRetries} 次）: ${lastError.message}`],
+        changedFiles: [],
+        commands: [],
+        testResult: '未执行',
+        rawOutputSummary: lastError.message,
+        parseStatus: 'parse_failed',
+        updatedAt: new Date().toISOString(),
+      });
     }
   }
 }
-
-export default Worker;

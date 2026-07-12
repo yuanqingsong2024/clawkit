@@ -1,26 +1,32 @@
 {
   "name": "@clawkit/controller",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "clawkit 控制器服务",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "pnpm --filter @clawkit/cli build && tsc && mkdir -p dist/persistence && cp src/persistence/init.sql dist/persistence/init.sql",
+    "build": "pnpm --filter @clawkit/pipeline build && pnpm --filter @clawkit/plugin-core build && tsc && mkdir -p dist/persistence && cp src/persistence/init.sql dist/persistence/init.sql",
     "lint": "tsc --noEmit",
     "clean": "rm -rf dist",
     "dev": "tsc --watch",
-    "start": "node dist/index.js",
-    "test": "pnpm build && node tests/run-tests.js"
+    "start": "pnpm build && node dist/index.js",
+    "test": "vitest run --reporter=verbose"
   },
   "dependencies": {
     "@clawkit/cli": "workspace:*",
     "@clawkit/shared": "workspace:*",
+    "@clawkit/plugin-core": "workspace:*",
+    "@clawkit/pipeline": "workspace:*",
     "better-sqlite3": "^12.8.0",
+    "chokidar": "^3.6.0",
     "fastify": "^4.29.0",
-    "yaml": "^2.8.2"
+    "yaml": "^2.8.2",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
-    "typescript": "^5.3.3"
+    "@types/chokidar": "^2.1.3",
+    "typescript": "^5.3.3",
+    "vitest": "^2.0.0"
   }
 }

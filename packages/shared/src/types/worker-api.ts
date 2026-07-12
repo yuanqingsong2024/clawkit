@@ -37,6 +37,26 @@ export interface WorkerPullTaskResponse {
 }
 
 /**
+ * Runtime Worker 只读摘要
+ */
+export interface RuntimeWorkerSummary {
+  id: string;
+  name: string;
+  status: 'online' | 'offline' | 'unknown';
+  labels: Record<string, string | boolean>;
+  capabilities: string[];
+  supportedExecutors: string[];
+  maxConcurrency: number;
+  runningCount: number;
+  lastHeartbeatAt: string;
+  riskPolicy: {
+    allowedRiskLevels: string[];
+    blockedRiskLevels: string[];
+  };
+  maintenance: boolean;
+}
+
+/**
  * Worker 提交任务结果请求
  */
 export interface WorkerSubmitResultRequest {

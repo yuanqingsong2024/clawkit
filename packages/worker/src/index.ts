@@ -1,4 +1,8 @@
+import { createLogger } from '@clawkit/shared';
+
 import { Worker } from './worker';
+
+const logger = createLogger('worker');
 
 export { Worker } from './worker';
 export { loadWorkerConfig } from './config';
@@ -14,27 +18,28 @@ export { SecurityBoundaryBuilder } from './services/security-boundary-builder';
 if (require.main === module) {
   const worker = new Worker();
 
-  const shutdown = async (): Promise<void> => {
+  const shutdown = async (signal: string): Promise<void> => {
+    logger.info('收到关闭信号', { signal });
     await worker.stop();
     process.exit(0);
   };
 
   process.once('SIGINT', () => {
-    shutdown().catch((error: unknown) => {
-      console.error('Worker 停止失败：', error);
+    shutdown('SIGINT').catch((error: unknown) => {
+      logger.error('停止失败', error);
       process.exit(1);
     });
   });
 
   process.once('SIGTERM', () => {
-    shutdown().catch((error: unknown) => {
-      console.error('Worker 停止失败：', error);
+    shutdown('SIGTERM').catch((error: unknown) => {
+      logger.error('停止失败', error);
       process.exit(1);
     });
   });
 
   worker.start().catch((error: unknown) => {
-    console.error('Worker 启动失败：', error);
+    logger.error('启动失败', error);
     process.exit(1);
   });
 }

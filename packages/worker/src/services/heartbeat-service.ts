@@ -9,6 +9,7 @@ export class HeartbeatService {
     private config: WorkerConfig,
     private getStatus: () => WorkerStatus,
     private getCurrentTaskId: () => string | undefined,
+    private reRegister: () => Promise<void>,
   ) {}
 
   start(): void {
@@ -39,7 +40,7 @@ export class HeartbeatService {
       currentTaskId: this.getCurrentTaskId(),
     };
 
-    const response = await fetch(
+    let response = await fetch(
       `${this.config.controllerUrl}/api/workers/${this.config.workerId}/heartbeat`,
       {
         method: 'POST',
@@ -47,6 +48,27 @@ export class HeartbeatService {
         body: JSON.stringify(request),
       },
     );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      const workerMissing = response.status === 404 || errorText.includes('controller.worker_not_found');
+
+      if (workerMissing) {
+        console.warn(`检测到 Worker ${this.config.workerId} 未注册，正在自动重新注册`);
+        await this.reRegister();
+
+        response = await fetch(
+          `${this.config.controllerUrl}/api/workers/${this.config.workerId}/heartbeat`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request),
+          },
+        );
+      } else {
+        throw new Error(`心跳发送失败：${response.status} ${errorText}`);
+      }
+    }
 
     if (!response.ok) {
       const error = await response.text();

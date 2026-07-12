@@ -117,3 +117,8 @@ export async function apiPut<T, B>(path: string, body: B, init?: RequestInit): P
   });
   return res.data;
 }
+
+export async function apiDelete<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await apiRequest<T>(path, { ...init, method: 'DELETE' });
+  return res.data;
+}

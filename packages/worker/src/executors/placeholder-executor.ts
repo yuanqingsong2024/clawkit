@@ -1,6 +1,13 @@
 import type { TaskExecutionContext, TaskExecutionResult, TaskExecutor } from '@clawkit/shared';
 
+/**
+ * 占位执行器
+ * 用于开发和测试场景，不执行真实任务
+ */
 export class PlaceholderExecutor implements TaskExecutor {
+  /** 执行器名称 */
+  readonly name = 'placeholder';
+
   constructor(private readonly workerId = 'worker-unknown') {}
 
   async execute(context: TaskExecutionContext): Promise<TaskExecutionResult> {
@@ -30,10 +37,10 @@ export class PlaceholderExecutor implements TaskExecutor {
       changedFiles: [],
       commands: [],
       testResult: '未执行真实测试',
-      rawOutputSummary: '当前为占位执行，未调用真实 OpenCode',
+      rawOutputSummary: '当前为占位执行，未调用真实执行器',
       parseStatus: 'text_only',
       risks: ['当前为占位执行，未进行真实代码修改'],
-      nextStageHint: '下一阶段将接入真实 OpenCode 执行器',
+      nextStageHint: '下一阶段将接入真实执行器',
       updatedAt: new Date().toISOString(),
     };
 

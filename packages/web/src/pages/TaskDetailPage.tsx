@@ -1,13 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { Badge } from '../components/ui/Badge';
 import { Card } from '../components/ui/Card';
 import { CodeBlock } from '../components/ui/CodeBlock';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { PageHeader } from '../components/ui/PageHeader';
 import { ErrorNotice, InfoNotice } from '../components/ui/Notice';
+import { inputClassName, primaryButtonClassName, secondaryButtonClassName } from '../components/ui/styles';
 import { apiGet, apiPost } from '../lib/api';
 import { formatDateTime } from '../lib/format';
+import {
+  getAvailableTaskActions,
+  getTaskActionHint,
+  labelForExecutionStatus,
+  labelForTaskStatus,
+  toneForExecutionStatus,
+  toneForTaskStatus,
+} from '../lib/task-ui';
 
 interface TaskDraft {
   taskId: string;
@@ -52,6 +63,11 @@ interface TaskDetail {
   statusSnapshot: TaskStatusSnapshot;
 }
 
+interface ApproveActionResult {
+  dispatchErrorMessage?: string;
+  nextStageHint?: string;
+}
+
 function renderList(items: string[] | undefined | null): JSX.Element {
   if (!items || items.length === 0) {
     return <div className="text-sm text-slate-500">-</div>;
@@ -79,6 +95,7 @@ export function TaskDetailPage(): JSX.Element {
   const [operator, setOperator] = useState('');
   const [revisionText, setRevisionText] = useState('');
   const [actionHint, setActionHint] = useState<string | null>(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   const reviseMutation = useMutation({
     mutationFn: (input: { operator: string; revisionText: string }) =>
@@ -93,9 +110,15 @@ export function TaskDetailPage(): JSX.Element {
 
   const approveMutation = useMutation({
     mutationFn: (input: { operator: string }) =>
-      apiPost<unknown, { operator: string }>(`/approval/${encodeURIComponent(taskId)}/approve`, input),
-    onSuccess: () => {
-      setActionHint('草案已确认，任务已进入执行链路（如后端已派发）。');
+      apiPost<ApproveActionResult, { operator: string }>(`/approval/${encodeURIComponent(taskId)}/approve`, input),
+    onSuccess: (result) => {
+      setActionHint(
+        result.dispatchErrorMessage
+          ? `任务已确认，但当前无法派发：${result.dispatchErrorMessage}`
+          : result.nextStageHint
+            ? `任务已确认。${result.nextStageHint}`
+            : '草案已确认，任务已进入执行链路（如后端已派发）。',
+      );
       void queryClient.invalidateQueries({ queryKey: ['taskDetail', taskId] });
       void queryClient.invalidateQueries({ queryKey: ['tasks'] });
     },
@@ -118,6 +141,25 @@ export function TaskDetailPage(): JSX.Element {
   const detail = detailQuery.data;
   const snapshot = detail?.statusSnapshot;
   const execution = snapshot?.executionSummary;
+  const availableActions = useMemo(() => getAvailableTaskActions(snapshot?.status ?? detail?.taskDraft.status ?? ''), [detail?.taskDraft.status, snapshot?.status]);
+  const canReviseAction = availableActions.includes('revise');
+  const canApproveAction = availableActions.includes('approve');
+  const canCancelAction = availableActions.includes('cancel');
+  const actionHintText = getTaskActionHint(snapshot?.status ?? detail?.taskDraft.status ?? '');
+
+  useEffect(() => {
+    if (!actionHint) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setActionHint(null);
+    }, 4000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [actionHint]);
 
   const promptSummary = snapshot?.latestPromptDraftSummary;
   const promptSummaryBlock = useMemo(() => {
@@ -149,27 +191,31 @@ export function TaskDetailPage(): JSX.Element {
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-sm text-slate-600">
-            <Link className="text-sky-700 hover:underline" to="/tasks">
-              返回任务列表
-            </Link>
-          </div>
-          <h1 className="mt-1 text-2xl font-semibold">任务详情</h1>
-          <div className="mt-1 text-sm text-slate-600">taskId：{taskId || '-'}</div>
-        </div>
-        <button
-          type="button"
-          onClick={() => detailQuery.refetch()}
-          className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={detailQuery.isFetching}
-        >
-          {detailQuery.isFetching ? '刷新中…' : '手动刷新'}
-        </button>
-      </div>
+      <PageHeader
+        title="任务详情"
+        description={
+          <>
+            <span className="block text-sm">
+              <Link className="text-sky-700 hover:underline" to="/tasks">
+                返回任务列表
+              </Link>
+            </span>
+            <span className="block text-sm text-slate-600">ID：{taskId || '-'}</span>
+          </>
+        }
+        actions={
+          <button
+            type="button"
+            onClick={() => detailQuery.refetch()}
+            className={primaryButtonClassName}
+            disabled={detailQuery.isFetching}
+          >
+            {detailQuery.isFetching ? '刷新中…' : '手动刷新'}
+          </button>
+        }
+      />
 
-      {detailQuery.isLoading ? <InfoNotice message="正在加载任务详情…" /> : null}
+      {detailQuery.isLoading ? <InfoNotice message="加载任务详情…" /> : null}
       {detailQuery.error ? (
         <ErrorNotice message={detailQuery.error instanceof Error ? detailQuery.error.message : '未知错误'} />
       ) : null}
@@ -178,10 +224,11 @@ export function TaskDetailPage(): JSX.Element {
 
       {detail ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <Card
+              compact
               title="taskDraft 基本信息"
-              actions={snapshot ? <Badge tone="neutral">{snapshot.status}</Badge> : undefined}
+              actions={snapshot ? <Badge tone={toneForTaskStatus(snapshot.status)}>{labelForTaskStatus(snapshot.status)}</Badge> : undefined}
             >
               <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2">
@@ -195,7 +242,7 @@ export function TaskDetailPage(): JSX.Element {
                 <div>
                   <dt className="text-xs text-slate-500">状态</dt>
                   <dd className="mt-1">
-                    <Badge tone="neutral">{detail.taskDraft.status}</Badge>
+                    <Badge tone={toneForTaskStatus(detail.taskDraft.status)}>{labelForTaskStatus(detail.taskDraft.status)}</Badge>
                   </dd>
                 </div>
                 <div>
@@ -213,28 +260,16 @@ export function TaskDetailPage(): JSX.Element {
               </dl>
             </Card>
 
-            <Card title="latestPromptDraftSummary">
+            <Card compact title="latestPromptDraftSummary">
               {promptSummaryBlock}
             </Card>
           </div>
 
-          <Card title="executionSummary">
+          <Card compact title="executionSummary">
             {execution ? (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge
-                    tone={
-                      execution.status === 'done'
-                        ? 'success'
-                        : execution.status === 'failed'
-                          ? 'failed'
-                          : execution.status === 'running'
-                            ? 'info'
-                            : 'neutral'
-                    }
-                  >
-                    {execution.status}
-                  </Badge>
+                  <Badge tone={toneForExecutionStatus(execution.status)}>{labelForExecutionStatus(execution.status)}</Badge>
                   <span className="text-sm text-slate-700">{execution.note}</span>
                   <span className="text-xs text-slate-500">最后更新：{formatDateTime(execution.lastUpdatedAt)}</span>
                 </div>
@@ -242,7 +277,7 @@ export function TaskDetailPage(): JSX.Element {
                 {execution.summary ? <div className="text-sm text-slate-800">摘要：{execution.summary}</div> : null}
                 {execution.testResult ? <div className="text-sm text-slate-800">测试结果：{execution.testResult}</div> : null}
 
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                   <div>
                     <div className="text-xs text-slate-500">变更文件</div>
                     <div className="mt-1">{renderList(execution.changedFiles ?? [])}</div>
@@ -256,13 +291,15 @@ export function TaskDetailPage(): JSX.Element {
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-slate-500">暂无 executionSummary</div>
+              <div className="text-sm text-slate-500">暂无执行摘要</div>
             )}
           </Card>
 
-          <Card title="操作">
+          <Card compact title="操作">
             <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">{actionHintText}</div>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                 <div>
                   <label className="text-xs text-slate-500">操作者（operator）</label>
                   <input
@@ -271,66 +308,78 @@ export function TaskDetailPage(): JSX.Element {
                       setActionHint(null);
                       setOperator(e.target.value);
                     }}
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                    className={inputClassName}
                     placeholder="例如：admin"
                   />
-                  <div className="mt-1 text-xs text-slate-500">用于记录审计信息，不做复杂校验。</div>
+                   <div className="mt-1 text-xs text-slate-500">用于审计记录，不做复杂校验。</div>
                 </div>
-                <div>
-                  <label className="text-xs text-slate-500">修改草案（revisionText）</label>
-                  <textarea
-                    value={revisionText}
-                    onChange={(e) => {
-                      setActionHint(null);
-                      setRevisionText(e.target.value);
-                    }}
-                    className="mt-1 h-24 w-full resize-y rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
-                    placeholder="输入你希望如何修改草案，例如：缩小范围、补充约束、调整验收标准…"
-                  />
-                </div>
+                {canReviseAction ? (
+                  <div>
+                    <label className="text-xs text-slate-500">修改草案（revisionText）</label>
+                    <textarea
+                      value={revisionText}
+                      onChange={(e) => {
+                        setActionHint(null);
+                        setRevisionText(e.target.value);
+                      }}
+                      className="mt-1 h-24 w-full resize-y rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                      placeholder="例如：缩小范围、补充约束、调整验收标准…"
+                    />
+                  </div>
+                ) : null}
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={!canRevise || isAnyActionPending}
-                  onClick={() => {
-                    setActionHint(null);
-                    reviseMutation.mutate({ operator: operator.trim(), revisionText });
-                  }}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  修改草案
-                </button>
-                <button
-                  type="button"
-                  disabled={!operatorReady || isAnyActionPending}
-                  onClick={() => {
-                    setActionHint(null);
-                    approveMutation.mutate({ operator: operator.trim() });
-                  }}
-                  className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  确认派发
-                </button>
-                <button
-                  type="button"
-                  disabled={!operatorReady || isAnyActionPending}
-                  onClick={() => {
-                    setActionHint(null);
-                    cancelMutation.mutate({ operator: operator.trim() });
-                  }}
-                  className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  取消任务
-                </button>
-              </div>
+              {availableActions.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {canReviseAction ? (
+                    <button
+                      type="button"
+                      disabled={!canRevise || isAnyActionPending}
+                      onClick={() => {
+                        setActionHint(null);
+                        reviseMutation.mutate({ operator: operator.trim(), revisionText });
+                      }}
+                      className={secondaryButtonClassName}
+                    >
+                      修改草案
+                    </button>
+                  ) : null}
+                  {canApproveAction ? (
+                    <button
+                      type="button"
+                      disabled={!operatorReady || isAnyActionPending}
+                      onClick={() => {
+                        setActionHint(null);
+                        approveMutation.mutate({ operator: operator.trim() });
+                      }}
+                      className={primaryButtonClassName}
+                    >
+                      确认派发
+                    </button>
+                  ) : null}
+                  {canCancelAction ? (
+                    <button
+                      type="button"
+                      disabled={!operatorReady || isAnyActionPending}
+                      onClick={() => {
+                        setActionHint(null);
+                        setShowCancelConfirm(true);
+                      }}
+                      className={`${primaryButtonClassName} bg-rose-600 hover:bg-rose-500`.trim()}
+                    >
+                      取消任务
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500">当前状态没有可执行操作。</div>
+              )}
 
               {(reviseMutation.error || approveMutation.error || cancelMutation.error) ? (
                 <ErrorNotice
                   message={
                     (reviseMutation.error ?? approveMutation.error ?? cancelMutation.error) instanceof Error
-                      ? (reviseMutation.error ?? approveMutation.error ?? cancelMutation.error as Error).message
+                      ? ((reviseMutation.error ?? approveMutation.error ?? cancelMutation.error) as Error).message
                       : '未知错误'
                   }
                 />
@@ -338,11 +387,24 @@ export function TaskDetailPage(): JSX.Element {
             </div>
           </Card>
 
-          <Card title="sourceText（只读）">
+          <Card compact title="sourceText（只读）">
             <CodeBlock>{detail.taskDraft.sourceText || '-'}</CodeBlock>
           </Card>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        isOpen={showCancelConfirm}
+        onClose={() => setShowCancelConfirm(false)}
+        onConfirm={() => {
+          cancelMutation.mutate({ operator: operator.trim() });
+        }}
+        title="确认取消任务"
+        message={`确定要取消任务 ${taskId} 吗？此操作不可撤销。`}
+        confirmLabel="确认取消"
+        cancelLabel="返回"
+        danger
+      />
     </section>
   );
 }

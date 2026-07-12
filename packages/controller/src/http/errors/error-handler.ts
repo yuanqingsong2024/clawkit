@@ -6,9 +6,18 @@ import { HttpError } from './http-error';
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
     if (error instanceof HttpError) {
+      const errorData = error.toJSON();
       reply
         .status(error.statusCode)
-        .send(buildFailureResponse(error.errorCode, error.message, error.details));
+        .send(buildFailureResponse(
+          error.errorCode,
+          errorData.message,
+          {
+            ...(error.details || {}),
+            suggestion: errorData.suggestion,
+            technical: errorData.technical,
+          }
+        ));
       return;
     }
 

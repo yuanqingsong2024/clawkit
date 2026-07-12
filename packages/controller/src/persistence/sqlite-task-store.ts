@@ -1,14 +1,11 @@
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ManifestSchema, TaskStatus, type Manifest } from '@clawkit/shared';
+import { ManifestSchema, TaskStatus, TaskPriority, type Manifest } from '@clawkit/shared';
 import type { TaskDraft } from '../models/task-draft';
 import type { TaskMemory } from '../models/task-memory';
 import type { PromptDraft } from '../models/prompt-draft';
 import type { ApprovalRecord } from '../models/approval-record';
-import type { SetupRun } from '../models/setup-run';
-import type { SetupSession } from '../models/setup-session';
-import type { SetupStep } from '../models/setup-step';
 import { CONTROLLER_SCHEMA_SQL_FILE } from './tables';
 
 /**
@@ -58,8 +55,8 @@ export class SqliteTaskStore {
       INSERT OR REPLACE INTO task_drafts (
         task_id, source_text, project_key, intent,
         constraints_json, acceptance_criteria_json,
-        status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        status, priority, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -70,6 +67,7 @@ export class SqliteTaskStore {
       JSON.stringify(draft.constraints),
       JSON.stringify(draft.acceptanceCriteria),
       draft.status,
+      draft.priority,
       draft.createdAt.toISOString(),
       draft.updatedAt.toISOString()
     );
@@ -132,6 +130,7 @@ export class SqliteTaskStore {
       constraints: JSON.parse(row.constraints_json),
       acceptanceCriteria: JSON.parse(row.acceptance_criteria_json),
       status: row.status,
+      priority: row.priority as TaskPriority,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     };
@@ -380,228 +379,7 @@ export class SqliteTaskStore {
       DELETE FROM prompt_drafts;
       DELETE FROM task_memories;
       DELETE FROM task_drafts;
-      DELETE FROM setup_steps;
-      DELETE FROM setup_runs;
-      DELETE FROM setup_sessions;
     `);
-  }
-
-  saveSetupSession(session: SetupSession): void {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO setup_sessions (
-        session_id, status, form_data_json, manifest_yaml, created_at, updated_at, topology
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      session.sessionId,
-      session.status,
-      session.formData ? JSON.stringify(session.formData) : null,
-      session.manifestPreview,
-      session.createdAt.toISOString(),
-      session.updatedAt.toISOString(),
-      session.topology,
-    );
-  }
-
-  loadSetupSession(sessionId: string): SetupSession | undefined {
-    const stmt = this.db.prepare(`
-      SELECT * FROM setup_sessions WHERE session_id = ?
-    `);
-    const row = stmt.get(sessionId) as unknown;
-    if (!row) return undefined;
-
-    const obj = this.asObject(row);
-    if (!obj) return undefined;
-
-    return {
-      sessionId: this.asString(obj.session_id),
-      status: this.asString(obj.status) as SetupSession['status'],
-      topology: obj.topology ? this.asString(obj.topology) : 'all-in-one',
-      formData: obj.form_data_json ? (JSON.parse(this.asString(obj.form_data_json)) as Record<string, unknown>) : null,
-      manifestPreview: obj.manifest_yaml ? this.asString(obj.manifest_yaml) : null,
-      createdAt: new Date(this.asString(obj.created_at)),
-      updatedAt: new Date(this.asString(obj.updated_at)),
-    };
-  }
-
-  saveSetupRun(run: SetupRun): void {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO setup_runs (
-        run_id, session_id, parent_run_id,
-        status, current_step,
-        manifest_json, manifest_yaml,
-        meta_json, summary_text, error_summary,
-        started_at, finished_at,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      run.runId,
-      run.sessionId,
-      run.parentRunId,
-      run.status,
-      run.currentStep,
-      JSON.stringify(run.manifest),
-      run.manifestYaml,
-      JSON.stringify({
-        ...(run.meta ?? {}),
-        errorSummary: run.errorSummary,
-      }),
-      run.summary,
-      run.errorSummary,
-      run.startedAt ? run.startedAt.toISOString() : null,
-      run.finishedAt ? run.finishedAt.toISOString() : null,
-      run.createdAt.toISOString(),
-      run.updatedAt.toISOString(),
-    );
-  }
-
-  loadSetupRun(runId: string): SetupRun | undefined {
-    const stmt = this.db.prepare(`
-      SELECT * FROM setup_runs WHERE run_id = ?
-    `);
-    const row = stmt.get(runId) as unknown;
-    if (!row) return undefined;
-
-    return this.rowToSetupRun(row);
-  }
-
-  loadAllSetupRuns(): SetupRun[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM setup_runs ORDER BY created_at DESC
-    `);
-    const rows = stmt.all() as unknown[];
-    return rows.map((row) => this.rowToSetupRun(row));
-  }
-
-  insertSetupStep(step: Omit<SetupStep, 'stepId'>): SetupStep {
-    const stmt = this.db.prepare(`
-      INSERT INTO setup_steps (
-        run_id, step_name, title, status, detail, logs_json,
-        started_at, finished_at,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(
-      step.runId,
-      step.stepKey,
-      step.title,
-      step.status,
-      step.errorMessage,
-      JSON.stringify(step.logSummary ?? []),
-      step.startedAt ? step.startedAt.toISOString() : null,
-      step.finishedAt ? step.finishedAt.toISOString() : null,
-      step.createdAt.toISOString(),
-      step.updatedAt.toISOString(),
-    ) as unknown;
-
-    const insertedId = this.extractLastInsertRowId(result);
-    return {
-      ...step,
-      stepId: insertedId,
-    };
-  }
-
-  saveSetupStep(step: SetupStep): void {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO setup_steps (
-        id, run_id, step_name, title, status, detail, logs_json,
-        started_at, finished_at,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      step.stepId,
-      step.runId,
-      step.stepKey,
-      step.title,
-      step.status,
-      step.errorMessage,
-      JSON.stringify(step.logSummary ?? []),
-      step.startedAt ? step.startedAt.toISOString() : null,
-      step.finishedAt ? step.finishedAt.toISOString() : null,
-      step.createdAt.toISOString(),
-      step.updatedAt.toISOString(),
-    );
-  }
-
-  loadSetupSteps(runId: string): SetupStep[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM setup_steps WHERE run_id = ? ORDER BY id ASC
-    `);
-    const rows = stmt.all(runId) as unknown[];
-    return rows.map((row) => this.rowToSetupStep(row));
-  }
-
-  private rowToSetupRun(row: unknown): SetupRun {
-    const obj = this.asObject(row);
-    if (!obj) {
-      throw new Error('setup_runs 数据行格式非法');
-    }
-
-    const manifestJson = this.asString(obj.manifest_json);
-    const parsedManifest = JSON.parse(manifestJson) as unknown;
-    const manifestParsed = ManifestSchema.safeParse(parsedManifest);
-    if (!manifestParsed.success) {
-      const first = manifestParsed.error.issues[0];
-      throw new Error(`setup_runs manifest_json 校验失败：${first?.message ?? '未知错误'}`);
-    }
-
-    return {
-      runId: this.asString(obj.run_id),
-      sessionId: this.asString(obj.session_id),
-      parentRunId: obj.parent_run_id ? this.asString(obj.parent_run_id) : null,
-      status: this.asString(obj.status) as SetupRun['status'],
-      currentStep: obj.current_step ? this.asString(obj.current_step) : null,
-      manifest: manifestParsed.data as Manifest,
-      manifestYaml: this.asString(obj.manifest_yaml),
-      meta: this.readRunMeta(this.asString(obj.meta_json)).meta,
-      summary: obj.summary_text ? this.asString(obj.summary_text) : null,
-      errorSummary: obj.error_summary ? this.asString(obj.error_summary) : this.readRunMeta(this.asString(obj.meta_json)).errorSummary,
-      startedAt: obj.started_at ? new Date(this.asString(obj.started_at)) : null,
-      finishedAt: obj.finished_at ? new Date(this.asString(obj.finished_at)) : null,
-      createdAt: new Date(this.asString(obj.created_at)),
-      updatedAt: new Date(this.asString(obj.updated_at)),
-    };
-  }
-
-  private rowToSetupStep(row: unknown): SetupStep {
-    const obj = this.asObject(row);
-    if (!obj) {
-      throw new Error('setup_steps 数据行格式非法');
-    }
-
-    return {
-      stepId: this.asNumber(obj.id),
-      runId: this.asString(obj.run_id),
-      stepKey: this.asString(obj.step_name),
-      title: this.asString(obj.title),
-      status: this.asString(obj.status) as SetupStep['status'],
-      logSummary: JSON.parse(this.asString(obj.logs_json)) as string[],
-      errorMessage: obj.detail ? this.asString(obj.detail) : null,
-      startedAt: obj.started_at ? new Date(this.asString(obj.started_at)) : null,
-      finishedAt: obj.finished_at ? new Date(this.asString(obj.finished_at)) : null,
-      createdAt: new Date(this.asString(obj.created_at)),
-      updatedAt: new Date(this.asString(obj.updated_at)),
-    };
-  }
-
-  private readRunMeta(metaJson: string): { meta: Record<string, unknown>; errorSummary: string | null } {
-    const parsed = JSON.parse(metaJson) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { meta: {}, errorSummary: null };
-    }
-    const obj = parsed as Record<string, unknown>;
-    const errorSummary = typeof obj.errorSummary === 'string' ? obj.errorSummary : null;
-    const { errorSummary: _ignored, ...rest } = obj;
-    return {
-      meta: rest,
-      errorSummary,
-    };
   }
 
   private asObject(value: unknown): Record<string, unknown> | null {

@@ -153,8 +153,6 @@ export class OpenClawDeployService {
       '# OpenClaw Docker Compose 配置',
       '# 由 clawkit 自动生成，请勿手动编辑',
       '',
-      "version: '3.8'",
-      '',
       'services:',
       '  openclaw-gateway:',
       '    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}',
@@ -172,7 +170,7 @@ export class OpenClawDeployService {
       "      test: [\"CMD\", \"node\", \"-e\", \"fetch('http://127.0.0.1:18000/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"]",
       '      interval: 30s',
       '      timeout: 10s',
-      '      start_period: 15s',
+      '      start_period: 60s',
       '      retries: 3',
       '    restart: unless-stopped',
       '',
@@ -243,9 +241,9 @@ export class OpenClawDeployService {
    * 健康检查：轮询 http://localhost:18000/healthz，每 3 秒一次，最多 40 次（共 120 秒）。
    */
   async waitForHealthy(): Promise<OpenClawDeployResult> {
-    const maxAttempts = 40;
-    const intervalMs = 3000;
-    const requestTimeoutMs = 5000;
+    const maxAttempts = 60;
+    const intervalMs = 5000;
+    const requestTimeoutMs = 8000;
     const healthzUrl = `${this.openClawUrl}/healthz`;
 
     let lastError: string | null = null;

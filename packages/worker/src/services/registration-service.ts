@@ -12,6 +12,9 @@ export class WorkerRegistrationService {
       nodeName: this.config.nodeName,
       connectMode: this.config.connectMode,
       tags: this.config.tags,
+      labels: this.config.labels,
+      capabilities: this.config.capabilities,
+      maxConcurrency: this.config.maxConcurrentTasks,
       supportedProjects: this.config.supportedProjects,
     };
 

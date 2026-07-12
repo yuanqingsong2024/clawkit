@@ -22,6 +22,7 @@ interface StoredControllerConfig {
 export class ControllerConfigService {
   private readonly manifestLoader = new ManifestLoader();
   private readonly configPath = path.join(process.cwd(), 'data', 'controller-config.json');
+  private readonly legacyConfigPath = path.join(process.cwd(), 'packages', 'controller', 'data', 'controller-config.json');
 
   getConfig(): ControllerConfigDocument {
     const storedConfig = this.readStoredConfig();
@@ -71,13 +72,17 @@ export class ControllerConfigService {
   }
 
   private readStoredConfig(): StoredControllerConfig | null {
-    if (!fs.existsSync(this.configPath)) {
+    const activeConfigPath = fs.existsSync(this.configPath)
+      ? this.configPath
+      : (fs.existsSync(this.legacyConfigPath) ? this.legacyConfigPath : null);
+
+    if (activeConfigPath === null) {
       return null;
     }
 
     let parsed: unknown;
     try {
-      parsed = JSON.parse(fs.readFileSync(this.configPath, 'utf8'));
+      parsed = JSON.parse(fs.readFileSync(activeConfigPath, 'utf8'));
     } catch (error) {
       throw new Error(`controller 本地配置读取失败：${error instanceof Error ? error.message : '未知错误'}`);
     }

@@ -4,6 +4,7 @@ import { registerWebConsoleStatic } from './register-web-console-static';
 import { registerErrorHandler } from './errors/error-handler';
 import { registerApiRoutes } from './routes';
 import { ServiceContainer } from './services/service-container';
+import { registerRuntimeAuth } from './auth/runtime-auth';
 
 export interface BuildHttpServerOptions {
   fastifyOptions?: FastifyServerOptions;
@@ -15,6 +16,7 @@ export async function buildHttpServer(options: BuildHttpServerOptions = {}): Pro
   const container = options.container ?? new ServiceContainer();
 
   registerErrorHandler(app);
+  registerRuntimeAuth(app);
   await registerApiRoutes(app, container);
   await registerWebConsoleStatic(app);
 

@@ -1,4 +1,4 @@
-import { ApprovalAction, ControllerErrorCode } from '@clawkit/shared';
+import { ApprovalAction, ControllerErrorCode, TaskPriority } from '@clawkit/shared';
 
 export enum TaskProtocolCommandType {
   CREATE_TASK = 'create_task',
@@ -19,6 +19,7 @@ export interface CreateTaskProtocol {
   goal: string;
   constraints: string[];
   acceptanceCriteria: string[];
+  priority?: TaskPriority;
   rawText: string;
 }
 

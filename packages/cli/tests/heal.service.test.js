@@ -20,6 +20,7 @@ services:
     node: "local"
     port: 8787
     apiPrefix: "/api"
+    publicUrl: "http://127.0.0.1:8787"
   openClaw:
     node: "local"
     publicUrl: "http://127.0.0.1:8787"

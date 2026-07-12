@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, master, develop, develop-*]
   pull_request:
-    branches: [main, develop]
+    branches: [main, master, develop, develop-*]
 
 jobs:
   build-and-test:
@@ -32,6 +32,36 @@ jobs:
       
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
+      
+      - name: 验证版本一致性
+        run: |
+          ROOT_VERSION=$(node -p "require('./package.json').version")
+          CLI_VERSION=$(node -p "require('./packages/cli/package.json').version")
+          CONTROLLER_VERSION=$(node -p "require('./packages/controller/package.json').version")
+          SHARED_VERSION=$(node -p "require('./packages/shared/package.json').version")
+          WEB_VERSION=$(node -p "require('./packages/web/package.json').version")
+          WORKER_VERSION=$(node -p "require('./packages/worker/package.json').version")
+          TEMPLATES_VERSION=$(node -p "require('./packages/templates/package.json').version")
+          DESKTOP_VERSION=$(node -p "require('./packages/desktop/package.json').version")
+          
+          echo "版本检查:"
+          echo "  root: $ROOT_VERSION"
+          echo "  cli: $CLI_VERSION"
+          echo "  controller: $CONTROLLER_VERSION"
+          echo "  shared: $SHARED_VERSION"
+          echo "  web: $WEB_VERSION"
+          echo "  worker: $WORKER_VERSION"
+          echo "  templates: $TEMPLATES_VERSION"
+          echo "  desktop: $DESKTOP_VERSION"
+          
+          if [ "$ROOT_VERSION" != "$CLI_VERSION" ] || [ "$ROOT_VERSION" != "$CONTROLLER_VERSION" ] || \
+             [ "$ROOT_VERSION" != "$SHARED_VERSION" ] || [ "$ROOT_VERSION" != "$WEB_VERSION" ] || \
+             [ "$ROOT_VERSION" != "$WORKER_VERSION" ] || [ "$ROOT_VERSION" != "$TEMPLATES_VERSION" ] || \
+             [ "$ROOT_VERSION" != "$DESKTOP_VERSION" ]; then
+            echo "错误: 所有包的版本号必须一致"
+            exit 1
+          fi
+          echo "✅ 版本号一致"
       
       - name: 类型检查
         run: pnpm lint

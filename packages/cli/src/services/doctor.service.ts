@@ -6,6 +6,8 @@ import {
   ManifestSchema,
   formatValidationIssue,
   CheckStatus,
+  SimpleManifestSchema,
+  convertSimpleToFullManifest,
 } from '@clawkit/shared';
 import type {
   CheckResult,
@@ -71,11 +73,12 @@ export class DoctorServiceImpl {
 
     // 4.1 OpenClaw 本地部署环境检查（仅 deployMode=local 时执行）
     const deployMode = parseResult.manifest.services.openClaw.deployMode;
+    const openClawLocalPort = this.resolveOpenClawLocalPort(parseResult.manifest);
     if (deployMode !== 'local') {
       const skipMessage = `跳过（deployMode: ${deployMode}）`;
       checks.push(this.skipCheck('Docker 可用性检查', skipMessage));
       checks.push(this.skipCheck('Docker Compose V2 检查', skipMessage));
-      checks.push(this.skipCheck(`OpenClaw 端口 ${this.openClawLocalPort} 检查`, skipMessage));
+      checks.push(this.skipCheck(`OpenClaw 端口 ${openClawLocalPort} 检查`, skipMessage));
     } else {
       // 检查顺序：Docker 可用性 → Docker Compose V2 → 端口
       const dockerCheck = this.checkDockerAvailable();
@@ -84,20 +87,21 @@ export class DoctorServiceImpl {
       if (dockerCheck.status === CheckStatus.FAIL) {
         // Docker 不可用时，后续检查全部跳过，避免误导
         checks.push(this.skipCheck('Docker Compose V2 检查', 'Docker 不可用，跳过后续检查'));
-        checks.push(this.skipCheck(`OpenClaw 端口 ${this.openClawLocalPort} 检查`, 'Docker 不可用，跳过后续检查'));
+        checks.push(this.skipCheck(`OpenClaw 端口 ${openClawLocalPort} 检查`, 'Docker 不可用，跳过后续检查'));
       } else {
         checks.push(this.checkDockerCompose());
-        checks.push(this.checkOpenClawPort());
+        checks.push(this.checkOpenClawPort(openClawLocalPort));
       }
     }
 
     // 4.2 OpenCode 一键安装环境检查（仅 installMode=local 时执行）
     const installMode = this.getOpenCodeInstallMode(parseResult.manifest);
+    const openCodeLocalPort = this.resolveOpenCodeLocalPort(parseResult.manifest);
     if (installMode !== 'local') {
       const skipMessage = `跳过（installMode: ${installMode}）`;
       checks.push(this.skipCheck('curl 可用性检查（OpenCode 安装）', skipMessage));
       checks.push(this.skipCheck('bash 可用性检查（OpenCode 安装）', skipMessage));
-      checks.push(this.skipCheck(`OpenCode 端口 ${this.openCodeLocalPort} 检查`, skipMessage));
+      checks.push(this.skipCheck(`OpenCode 端口 ${openCodeLocalPort} 检查`, skipMessage));
       checks.push(this.skipCheck('OpenCode 安装状态检查', skipMessage));
     } else {
       // 检查顺序：curl → bash → 端口 → 是否已安装
@@ -109,10 +113,10 @@ export class DoctorServiceImpl {
 
       if (curlCheck.status === CheckStatus.FAIL || bashCheck.status === CheckStatus.FAIL) {
         // curl 或 bash 不可用时，后续检查全部跳过，避免误导
-        checks.push(this.skipCheck(`OpenCode 端口 ${this.openCodeLocalPort} 检查`, 'curl 或 bash 不可用，跳过后续检查'));
+        checks.push(this.skipCheck(`OpenCode 端口 ${openCodeLocalPort} 检查`, 'curl 或 bash 不可用，跳过后续检查'));
         checks.push(this.skipCheck('OpenCode 安装状态检查', 'curl 或 bash 不可用，跳过后续检查'));
       } else {
-        checks.push(this.checkOpenCodePort());
+        checks.push(this.checkOpenCodePort(openCodeLocalPort));
         checks.push(this.checkOpenCodeInstalled());
       }
     }
@@ -207,9 +211,7 @@ export class DoctorServiceImpl {
    * 端口冲突：FAIL（阻塞）
    * 检查失败：WARN（非阻塞）
    */
-  private checkOpenClawPort(): CheckResult {
-    const port = this.openClawLocalPort;
-
+  private checkOpenClawPort(port: number): CheckResult {
     try {
       if (process.platform === 'win32') {
         const result = spawnSync('netstat', ['-ano', '-p', 'tcp'], {
@@ -338,6 +340,27 @@ export class DoctorServiceImpl {
     return 'unknown';
   }
 
+  private resolveOpenClawLocalPort(manifest: Manifest): number {
+    try {
+      const url = new URL(manifest.services.openClaw.publicUrl);
+      const parsed = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+      return Number.isInteger(parsed) && parsed > 0 ? parsed : this.openClawLocalPort;
+    } catch {
+      return this.openClawLocalPort;
+    }
+  }
+
+  private resolveOpenCodeLocalPort(manifest: Manifest): number {
+    for (const worker of manifest.workers) {
+      const project = worker.projects.find((item) => item.openCode.port && item.openCode.port > 0);
+      if (project && project.openCode.port) {
+        return project.openCode.port;
+      }
+    }
+
+    return this.openCodeLocalPort;
+  }
+
   /**
    * 检查 curl 是否可用（OpenCode installMode=local 时必需）
    */
@@ -416,9 +439,7 @@ export class DoctorServiceImpl {
    * 端口冲突：FAIL（阻塞）
    * 检查失败：WARN（非阻塞）
    */
-  private checkOpenCodePort(): CheckResult {
-    const port = this.openCodeLocalPort;
-
+  private checkOpenCodePort(port: number): CheckResult {
     try {
       if (process.platform === 'win32') {
         const result = spawnSync('netstat', ['-ano', '-p', 'tcp'], {
@@ -610,11 +631,27 @@ export class DoctorServiceImpl {
       message: 'YAML 语法正确',
     };
 
-    // Schema 校验
+    // 先尝试简化配置 Schema 校验
+    const simpleResult = SimpleManifestSchema.safeParse(raw);
+    if (simpleResult.success) {
+      return {
+        syntaxCheck,
+        schemaCheck: {
+          name: 'Schema 校验',
+          status: CheckStatus.PASS,
+          message: '配置文件符合简化版 Schema 定义',
+        },
+        manifest: convertSimpleToFullManifest(simpleResult.data) as Manifest,
+      };
+    }
+
+    // 再尝试完整配置 Schema 校验
     const result = ManifestSchema.safeParse(raw);
 
     if (!result.success) {
-      const validationErrors: CheckResult[] = result.error.issues.map((issue) => ({
+      const useSimpleErrors = simpleResult.error.issues.length <= result.error.issues.length;
+      const sourceIssues = useSimpleErrors ? simpleResult.error.issues : result.error.issues;
+      const validationErrors: CheckResult[] = sourceIssues.map((issue) => ({
         name: `Schema 校验 [${issue.path.join('.')}]`,
         status: CheckStatus.FAIL,
         message: formatValidationIssue(issue),
@@ -626,7 +663,7 @@ export class DoctorServiceImpl {
         schemaCheck: {
           name: 'Schema 校验',
           status: CheckStatus.FAIL,
-          message: `配置文件校验失败，共 ${result.error.issues.length} 个错误`,
+          message: `配置文件校验失败，共 ${sourceIssues.length} 个错误${useSimpleErrors ? '（按简化配置规则）' : '（按完整配置规则）'}`,
         },
         validationErrors,
       };
@@ -763,10 +800,12 @@ export class DoctorServiceImpl {
     // Controller 端口
     addPort(manifest.services.controller.port, 'Controller', manifest.services.controller.node);
 
-    // Worker 项目端口
+    // Worker 项目端口（只检查配置了独立端口的项目）
     for (const worker of manifest.workers) {
       for (const project of worker.projects) {
-        addPort(project.openCode.port, `OpenCode [${project.key}]`, worker.node);
+        if (project.openCode.port) {
+          addPort(project.openCode.port, `OpenCode [${project.key}]`, worker.node);
+        }
       }
     }
 

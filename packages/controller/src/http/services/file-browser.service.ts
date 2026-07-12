@@ -2,18 +2,31 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
+import { getGitRepoSummary, isGitRepository } from '@clawkit/shared';
+
 export interface FileItem {
   name: string;
   path: string;
   type: 'file' | 'directory';
   size?: number;
   modifiedAt?: string;
+  git?: {
+    isRepo: boolean;
+    currentBranch?: string;
+    remoteUrl?: string | null;
+  };
+}
+
+export interface FileBrowserLocation {
+  label: string;
+  path: string;
 }
 
 export interface BrowseResult {
   currentPath: string;
   parentPath: string | null;
   items: FileItem[];
+  locations: FileBrowserLocation[];
 }
 
 /**
@@ -43,6 +56,7 @@ export class FileBrowserService {
       currentPath,
       parentPath,
       items,
+      locations: this.listLocations(),
     };
   }
 
@@ -91,6 +105,18 @@ export class FileBrowserService {
             type: entry.isDirectory() ? 'directory' : 'file',
             size: entry.isFile() ? stat.size : undefined,
             modifiedAt: stat.mtime.toISOString(),
+            git: entry.isDirectory() && isGitRepository(fullPath)
+              ? (() => {
+                  const summary = getGitRepoSummary(fullPath);
+                  return summary
+                    ? {
+                        isRepo: true,
+                        currentBranch: summary.currentBranch,
+                        remoteUrl: summary.remoteUrl,
+                      }
+                    : { isRepo: false };
+                })()
+              : undefined,
           });
         } catch {
           continue;
@@ -108,6 +134,36 @@ export class FileBrowserService {
     } catch (error) {
       throw new Error(`读取目录失败：${error instanceof Error ? error.message : '未知错误'}`);
     }
+  }
+
+  /**
+   * 返回可快速跳转的位置，避免只能从用户主目录逐级查找其他磁盘或挂载点。
+   */
+  private listLocations(): FileBrowserLocation[] {
+    const locations: FileBrowserLocation[] = [{ label: '主目录', path: os.homedir() }];
+
+    if (process.platform === 'win32') {
+      for (let code = 67; code <= 90; code += 1) {
+        const drive = `${String.fromCharCode(code)}:\\`;
+        if (fs.existsSync(drive)) {
+          locations.push({ label: drive, path: drive });
+        }
+      }
+      return locations;
+    }
+
+    locations.push({ label: '根目录', path: '/' });
+    const mountedRoots = process.platform === 'darwin'
+      ? ['/Volumes']
+      : ['/media', path.join('/media', os.userInfo().username), '/mnt'];
+
+    for (const mountPath of mountedRoots) {
+      if (fs.existsSync(mountPath)) {
+        locations.push({ label: mountPath, path: mountPath });
+      }
+    }
+
+    return locations;
   }
 
   /**

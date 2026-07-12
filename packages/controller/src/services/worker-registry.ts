@@ -19,6 +19,12 @@ export class WorkerRegistry {
       existing.nodeName = request.nodeName;
       existing.connectMode = request.connectMode;
       existing.tags = request.tags;
+      existing.labels = request.labels ?? existing.labels ?? this.deriveLabels(existing.name, request.tags);
+      existing.capabilities = request.capabilities ?? existing.capabilities ?? this.deriveCapabilities(request.tags, request.supportedProjects);
+      existing.maxConcurrency = request.maxConcurrency ?? existing.maxConcurrency ?? 1;
+      existing.runningCount = existing.runningCount ?? 0;
+      existing.riskPolicy = existing.riskPolicy ?? this.buildRiskPolicy(existing.labels ?? {});
+      existing.maintenance = existing.maintenance ?? false;
       existing.supportedProjects = request.supportedProjects;
       existing.status = WorkerStatus.IDLE;
       existing.lastHeartbeatAt = now;
@@ -32,6 +38,12 @@ export class WorkerRegistry {
       nodeName: request.nodeName,
       connectMode: request.connectMode,
       tags: request.tags,
+      labels: request.labels ?? this.deriveLabels(request.name, request.tags),
+      capabilities: request.capabilities ?? this.deriveCapabilities(request.tags, request.supportedProjects),
+      maxConcurrency: request.maxConcurrency ?? 1,
+      runningCount: 0,
+      riskPolicy: this.buildRiskPolicy(request.labels ?? this.deriveLabels(request.name, request.tags)),
+      maintenance: false,
       supportedProjects: request.supportedProjects,
       status: WorkerStatus.IDLE,
       lastHeartbeatAt: now,
@@ -98,6 +110,7 @@ export class WorkerRegistry {
 
     worker.status = WorkerStatus.BUSY;
     worker.currentTaskId = taskId;
+    worker.runningCount = 1;
     worker.updatedAt = new Date();
   }
 
@@ -109,6 +122,7 @@ export class WorkerRegistry {
 
     worker.status = WorkerStatus.IDLE;
     worker.currentTaskId = undefined;
+    worker.runningCount = 0;
     worker.updatedAt = new Date();
   }
 
@@ -120,5 +134,43 @@ export class WorkerRegistry {
         worker.updatedAt = new Date();
       }
     }
+  }
+
+  private deriveLabels(name: string, tags: string[]): Record<string, string | boolean> {
+    const normalizedTags = tags.map((tag) => tag.toLowerCase());
+    const isSandbox = normalizedTags.some((tag) => tag.includes('sandbox') || tag.includes('test')) || /sandbox|test/i.test(name);
+
+    return {
+      env: isSandbox ? 'sandbox' : 'prod',
+      role: isSandbox ? 'test-worker' : 'worker',
+      sandbox: isSandbox,
+    };
+  }
+
+  private deriveCapabilities(tags: string[], supportedProjects: string[]): string[] {
+    const capabilities = new Set<string>(['opencode']);
+    const normalizedTags = tags.map((tag) => tag.toLowerCase());
+
+    if (normalizedTags.some((tag) => tag.includes('shell'))) {
+      capabilities.add('shell');
+    }
+
+    if (normalizedTags.some((tag) => tag.includes('git'))) {
+      capabilities.add('git-readonly');
+    }
+
+    if (supportedProjects.includes('*')) {
+      capabilities.add('multi-project');
+    }
+
+    return Array.from(capabilities);
+  }
+
+  private buildRiskPolicy(labels: Record<string, string | boolean>): { allowedRiskLevels: string[]; blockedRiskLevels: string[] } {
+    const isSandbox = labels.sandbox === true || labels.env === 'sandbox' || labels.role === 'test-worker';
+
+    return isSandbox
+      ? { allowedRiskLevels: ['low', 'medium'], blockedRiskLevels: ['high', 'urgent', 'critical'] }
+      : { allowedRiskLevels: ['low'], blockedRiskLevels: ['medium', 'high', 'urgent', 'critical'] };
   }
 }

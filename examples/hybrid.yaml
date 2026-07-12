@@ -21,10 +21,16 @@ services:
     node: "cloud-control"
     port: 8080
     apiPrefix: "/api"
+    publicUrl: "https://claw.example.com:8080"
   openClaw:
     node: "cloud-control"
     publicUrl: "https://claw.example.com"
     apiKey: "replace-me"
+  # 本地 OpenCode 服务，所有项目共享
+  openCode:
+    node: "local-dev"
+    installMode: "external"
+    publicUrl: "http://127.0.0.1:4096"
 
 workers:
   - id: "laptop-worker"
@@ -38,7 +44,6 @@ workers:
         repoPath: "/Users/dev/projects/desktop-client"
         baseBranch: "main"
         openCode:
-          port: 9911
           agent: "build"
           mode: "default"
 

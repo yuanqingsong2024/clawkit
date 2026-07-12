@@ -1,80 +1,60 @@
-import type { SetupRun } from '../../models/setup-run';
-import type { SetupStep } from '../../models/setup-step';
-import type { SetupSession } from '../../models/setup-session';
-
-export type SetupStreamEventName = 'setup.run' | 'setup.step' | 'setup.log' | 'setup.summary' | 'setup.heartbeat';
-
-export interface SetupStreamEvent<T extends Record<string, unknown>> {
-  event: SetupStreamEventName;
-  runId: string;
-  timestamp: string;
-  data: T;
+/**
+ * Setup Stream 服务
+ * 
+ * 处理 Setup 向导的流式输出（SSE）
+ */
+export interface StreamEvent {
+  type: string;
+  data: unknown;
+  timestamp?: number;
 }
-
-export type SetupStreamListener = (event: SetupStreamEvent<Record<string, unknown>>) => void;
 
 export class SetupStreamService {
-  private readonly listenersByRunId = new Map<string, Set<SetupStreamListener>>();
-  private readonly historyByRunId = new Map<string, Array<SetupStreamEvent<Record<string, unknown>>>>();
+  private streams: Map<string, (event: StreamEvent) => void> = new Map();
 
-  subscribe(runId: string, listener: SetupStreamListener): () => void {
-    const listeners = this.listenersByRunId.get(runId) ?? new Set<SetupStreamListener>();
-    listeners.add(listener);
-    this.listenersByRunId.set(runId, listeners);
-
-    const history = this.historyByRunId.get(runId) ?? [];
-    for (const event of history) {
-      listener(event);
-    }
-
-    return () => {
-      const current = this.listenersByRunId.get(runId);
-      if (!current) return;
-      current.delete(listener);
-      if (current.size === 0) {
-        this.listenersByRunId.delete(runId);
-      }
-    };
+  constructor() {
+    // 初始化流服务
   }
 
-  publish<T extends Record<string, unknown>>(event: SetupStreamEvent<T>): void {
-    const history = this.historyByRunId.get(event.runId) ?? [];
-    history.push(event as SetupStreamEvent<Record<string, unknown>>);
-    this.historyByRunId.set(event.runId, history.slice(-200));
+  /**
+   * 注册流处理器
+   */
+  registerStream(id: string, handler: (event: StreamEvent) => void): void {
+    this.streams.set(id, handler);
+  }
 
-    const listeners = this.listenersByRunId.get(event.runId);
-    if (!listeners) return;
-    for (const listener of listeners) {
-      listener(event as SetupStreamEvent<Record<string, unknown>>);
+  /**
+   * 注销流处理器
+   */
+  unregisterStream(id: string): void {
+    this.streams.delete(id);
+  }
+
+  /**
+   * 发送事件
+   */
+  sendEvent(id: string, event: StreamEvent): void {
+    const handler = this.streams.get(id);
+    if (handler) {
+      handler(event);
     }
   }
 
-  buildEvent<T extends Record<string, unknown>>(runId: string, name: SetupStreamEventName, data: T): SetupStreamEvent<T> {
-    return {
-      event: name,
-      runId,
-      timestamp: new Date().toISOString(),
-      data,
-    };
+  /**
+   * 广播事件到所有流
+   */
+  broadcastEvent(event: StreamEvent): void {
+    for (const handler of this.streams.values()) {
+      handler(event);
+    }
   }
 
-  publishRun(run: SetupRun, extra?: { session?: SetupSession; steps?: SetupStep[] }): void {
-    this.publish(this.buildEvent(run.runId, 'setup.run', {
-      run,
-      session: extra?.session,
-      steps: extra?.steps,
-    }));
-  }
-
-  publishStep(runId: string, step: SetupStep): void {
-    this.publish(this.buildEvent(runId, 'setup.step', { step }));
-  }
-
-  publishLog(runId: string, stepKey: string, message: string): void {
-    this.publish(this.buildEvent(runId, 'setup.log', { stepKey, message }));
-  }
-
-  publishSummary(runId: string, summary: string, errorSummary: string | null): void {
-    this.publish(this.buildEvent(runId, 'setup.summary', { summary, errorSummary }));
+  /**
+   * 创建 SSE 格式的事件
+   */
+  formatSSE(event: StreamEvent): string {
+    return `event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
   }
 }
+
+export default SetupStreamService;

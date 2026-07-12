@@ -32,6 +32,7 @@ export class QuickSetupCompiler {
           node: 'local-dev',
           port: 8787,
           apiPrefix: '/api',
+          publicUrl: 'http://127.0.0.1:8787',
         },
         openClaw: {
           node: 'local-dev',
@@ -111,6 +112,7 @@ export class QuickSetupCompiler {
           node: 'cloud-control',
           port: 8787,
           apiPrefix: '/api',
+          publicUrl: `http://${remote.host.trim()}:8787`,
         },
         openClaw: {
           node: 'cloud-control',

@@ -298,8 +298,10 @@ export class OpenCodeInstallService {
       let timedOut = false;
 
       // 使用 spawn 而非 exec：避免输出过大导致缓冲区问题，并支持流式采集
+      // 继承父进程环境变量，包括 http_proxy/https_proxy 等代理配置
       const child = spawn(command, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
+        env: process.env,
       });
 
       this.activeProcesses.add(child);

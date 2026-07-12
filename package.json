@@ -1,17 +1,24 @@
 {
   "name": "clawkit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "一键部署、配置并串联 OpenClaw 与 OpenCode 的轻量工具",
   "scripts": {
     "build": "pnpm -r build",
     "clean": "pnpm -r clean",
-    "dev": "pnpm -r dev",
+    "dev": "pnpm -r --if-present --filter \"!@clawkit/desktop\" dev",
     "lint": "pnpm -r lint",
     "test": "pnpm -r --if-present test",
-    "quickstart": "./scripts/quick-start.sh",
+    "desktop:dev": "pnpm --filter @clawkit/desktop dev",
+    "desktop:build": "pnpm --filter @clawkit/desktop build",
+    "desktop:start": "./scripts/start-desktop.sh",
+    "quickstart": "./scripts/quick-start-simple.sh",
+    "quickstart:full": "./scripts/quick-start.sh",
     "quickstart:dev": "./scripts/quick-start-dev.sh",
-    "smoke": "./scripts/smoke-test.sh"
+    "project:start": "./scripts/start-project-manager.sh",
+    "project:stop": "./scripts/stop-project-manager.sh",
+    "smoke": "./scripts/smoke-test.sh",
+    "opencode": "./scripts/start-opencode.sh"
   },
   "keywords": [
     "openclaw",

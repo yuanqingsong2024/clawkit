@@ -25,10 +25,16 @@ services:
     node: "control-plane"
     port: 8080
     apiPrefix: "/api"
+    publicUrl: "https://controller.prod.example.com:8080"
   openClaw:
     node: "control-plane"
     publicUrl: "https://openclaw.prod.example.com"
     apiKey: "replace-me"
+  # 所有项目共享的 OpenCode 服务
+  openCode:
+    node: "exec-node"
+    installMode: "external"
+    publicUrl: "http://10.10.0.21:4096"
 
 workers:
   - id: "worker-prod-1"
@@ -42,14 +48,12 @@ workers:
         repoPath: "/srv/projects/api-service"
         baseBranch: "main"
         openCode:
-          port: 9921
           agent: "build"
           mode: "default"
       - key: "worker-dashboard"
         repoPath: "/srv/projects/worker-dashboard"
         baseBranch: "release"
         openCode:
-          port: 9922
           agent: "build"
           mode: "default"
 

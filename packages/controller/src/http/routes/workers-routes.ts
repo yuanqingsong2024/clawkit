@@ -8,6 +8,7 @@ import type {
 
 import type { DispatchService } from '../../services/dispatch-service';
 import type { WorkerRegistry } from '../../services/worker-registry';
+import { HttpError } from '../errors/http-error';
 import { sendSuccess } from '../types/api-response';
 
 export function buildWorkersRoutes(
@@ -28,7 +29,22 @@ export function buildWorkersRoutes(
     app.post<{ Params: { workerId: string }; Body: WorkerHeartbeatRequest }>(
       '/:workerId/heartbeat',
       async (request, reply) => {
-        const record = workerRegistry.heartbeat(request.params.workerId, request.body);
+        let record;
+        try {
+          record = workerRegistry.heartbeat(request.params.workerId, request.body);
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('controller.worker_not_found')) {
+            throw new HttpError({
+              statusCode: 404,
+              errorCode: 'controller.worker_not_found',
+              message: error.message,
+              details: { workerId: request.params.workerId },
+            });
+          }
+
+          throw error;
+        }
+
         sendSuccess(reply, {
           code: 'controller.workers.heartbeat_received',
           message: '心跳接收成功',
@@ -87,6 +103,50 @@ export function buildWorkersRoutes(
         code: 'controller.workers.detail_fetched',
         message: 'Worker 详情查询成功',
         data: worker,
+      });
+    });
+
+    // SSE 任务推送端点
+    app.get<{ Params: { workerId: string } }>('/:workerId/task-stream', async (request, reply) => {
+      const workerId = request.params.workerId;
+      
+      // 验证 Worker 是否存在
+      const worker = workerRegistry.getWorker(workerId);
+      if (!worker) {
+        return reply.status(404).send({
+          success: false,
+          code: 'controller.workers.not_found',
+          message: `Worker ${workerId} 未找到`,
+        });
+      }
+
+      // 设置 SSE 响应头
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      });
+
+      // 发送初始连接成功消息
+      reply.raw.write(`data: ${JSON.stringify({ type: 'connected', workerId })}\n\n`);
+
+      // 注册任务通知监听器
+      const listener = (notifiedWorkerId: string) => {
+        if (notifiedWorkerId === workerId) {
+          reply.raw.write(`data: ${JSON.stringify({ type: 'task-available' })}\n\n`);
+        }
+      };
+      dispatchService.onTaskAvailable(listener);
+
+      // 定期发送心跳保持连接
+      const heartbeatInterval = setInterval(() => {
+        reply.raw.write(`: heartbeat\n\n`);
+      }, 30000); // 每 30 秒发送一次心跳
+
+      // 连接关闭时清理
+      request.raw.on('close', () => {
+        clearInterval(heartbeatInterval);
+        dispatchService.offTaskAvailable(listener);
       });
     });
   };

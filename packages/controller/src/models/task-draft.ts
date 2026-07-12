@@ -1,4 +1,4 @@
-import { TaskStatus } from '@clawkit/shared';
+import { TaskPriority, TaskStatus } from '@clawkit/shared';
 
 export interface TaskDraft {
   taskId: string;
@@ -8,6 +8,7 @@ export interface TaskDraft {
   constraints: string[];
   acceptanceCriteria: string[];
   status: TaskStatus;
+  priority: TaskPriority;
   createdAt: Date;
   updatedAt: Date;
 }

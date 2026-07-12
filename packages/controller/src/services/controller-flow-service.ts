@@ -1,4 +1,4 @@
-import { ApprovalAction, ControllerErrorCode, TaskStatus } from '@clawkit/shared';
+import { ApprovalAction, ControllerErrorCode, TaskPriority, TaskStatus } from '@clawkit/shared';
 
 import type { ApprovalRecord } from '../models/approval-record';
 import { applyApprovalAction, transitionTaskStatus } from '../models/approval-state-machine';
@@ -111,6 +111,7 @@ export interface TaskListItem {
   projectKey: string;
   intent: string;
   status: TaskStatus;
+  priority: TaskPriority;
   createdAt: Date;
   updatedAt: Date;
   latestPromptDraftSummary: PromptDraftSummaryView | null;
@@ -406,6 +407,7 @@ export class ControllerFlowServiceImpl implements ControllerFlowService {
           projectKey: taskDraft.projectKey,
           intent: taskDraft.intent,
           status: taskDraft.status,
+          priority: taskDraft.priority,
           createdAt: taskDraft.createdAt,
           updatedAt: taskDraft.updatedAt,
           latestPromptDraftSummary: latestPromptDraft?.summaryView ?? null,

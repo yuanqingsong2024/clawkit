@@ -1,4 +1,7 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { TaskStatus } = require('@clawkit/shared');
 const { buildHttpServer, ControllerApiService, ControllerFlowServiceImpl } = require('../dist');
@@ -20,6 +23,31 @@ async function withPersistenceDisabled(handler) {
     } else {
       process.env.CONTROLLER_ENABLE_PERSISTENCE = previous;
     }
+  }
+}
+
+async function withManifestPath(manifestContent, handler) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawkit-projects-'));
+  const manifestPath = path.join(tempDir, 'clawkit-simple.yaml');
+  const previousManifestPath = process.env.CLAWKIT_MANIFEST_PATH;
+  const previousCwd = process.cwd();
+
+  fs.writeFileSync(manifestPath, manifestContent, 'utf8');
+  process.env.CLAWKIT_MANIFEST_PATH = manifestPath;
+  process.chdir(tempDir);
+
+  try {
+    await handler(manifestPath);
+  } finally {
+    process.chdir(previousCwd);
+
+    if (previousManifestPath === undefined) {
+      delete process.env.CLAWKIT_MANIFEST_PATH;
+    } else {
+      process.env.CLAWKIT_MANIFEST_PATH = previousManifestPath;
+    }
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
 
@@ -69,6 +97,26 @@ async function createOpenClawTask(app, text) {
 }
 
 async function runHttpRoutesTests() {
+  await run('system worker 启动接口：路由已注册并校验参数', async () => {
+    await withPersistenceDisabled(async () => {
+      const app = await buildHttpServer();
+      try {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/system/worker/start',
+          payload: { workerId: '' },
+        });
+
+        assert.equal(response.statusCode, 400);
+        const payload = response.json();
+        assert.equal(payload.success, false);
+        assert.equal(payload.code, 'controller.worker.invalid_request');
+      } finally {
+        await app.close();
+      }
+    });
+  });
+
   await run('approve 接口：waiting_approval 可以确认且只改为 approved', async () => {
     await withPersistenceDisabled(async () => {
       const app = await buildHttpServer();
@@ -227,6 +275,55 @@ async function runHttpRoutesTests() {
       } finally {
         await app.close();
       }
+    });
+  });
+
+  await run('projects 接口：删除最后一个项目后仍可成功返回空列表', async () => {
+    await withPersistenceDisabled(async () => {
+      await withManifestPath(
+        `version: "2.0"
+projects:
+  - key: "my-production-app"
+    path: "/path/to/production/app"
+    baseBranch: "main"
+    autoExecute: false
+    dangerousOps: []
+    openCodePort: 4096
+openClaw:
+  url: "http://127.0.0.1:18000"
+  webhookToken: "test-token"
+`,
+        async (manifestPath) => {
+          const app = await buildHttpServer();
+          try {
+            const deleteResponse = await app.inject({
+              method: 'DELETE',
+              url: '/api/projects/my-production-app',
+            });
+
+            assert.equal(deleteResponse.statusCode, 200);
+            const deletePayload = deleteResponse.json();
+            assert.equal(deletePayload.success, true);
+            assert.equal(deletePayload.code, 'controller.projects.deleted');
+
+            const listResponse = await app.inject({
+              method: 'GET',
+              url: '/api/projects',
+            });
+
+            assert.equal(listResponse.statusCode, 200);
+            const listPayload = listResponse.json();
+            assert.equal(listPayload.success, true);
+            assert.deepEqual(listPayload.data.projects, []);
+            assert.equal(listPayload.data.total, 0);
+
+            const savedManifest = fs.readFileSync(manifestPath, 'utf8');
+            assert.equal(savedManifest.includes('projects: []'), true);
+          } finally {
+            await app.close();
+          }
+        },
+      );
     });
   });
 

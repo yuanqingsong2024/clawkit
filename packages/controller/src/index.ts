@@ -1,22 +1,21 @@
 import type { FastifyInstance } from 'fastify';
 
+import { createLogger } from '@clawkit/shared';
+
 import { buildHttpServer } from './http/server';
+import { loadControllerConfig } from './config';
+
+const logger = createLogger('controller');
 
 export class Controller {
   private app: FastifyInstance | null = null;
 
   async start(): Promise<void> {
-    const host = process.env.CONTROLLER_HOST ?? '0.0.0.0';
-    const portText = process.env.CONTROLLER_PORT ?? '8787';
-    const port = Number.parseInt(portText, 10);
-
-    if (Number.isNaN(port) || port <= 0) {
-      throw new Error(`Controller 启动失败：端口无效 ${portText}`);
-    }
+    const config = loadControllerConfig();
 
     this.app = await buildHttpServer();
-    await this.app.listen({ host, port });
-    console.log(`Controller HTTP 服务已启动：http://${host}:${port}`);
+    await this.app.listen({ host: config.host, port: config.port });
+    logger.info('HTTP 服务已启动', { url: `http://${config.host}:${config.port}` });
   }
 
   async stop(): Promise<void> {
@@ -24,7 +23,7 @@ export class Controller {
       await this.app.close();
       this.app = null;
     }
-    console.log('Controller HTTP 服务已停止');
+    logger.info('HTTP 服务已停止');
   }
 }
 
@@ -33,12 +32,12 @@ if (require.main === module) {
   
   // 优雅关闭处理
   const shutdown = async (signal: string) => {
-    console.log(`\n收到 ${signal} 信号，正在关闭服务...`);
+    logger.info('收到关闭信号', { signal });
     try {
       await controller.stop();
       process.exit(0);
     } catch (error) {
-      console.error('关闭服务时出错:', error);
+      logger.error('关闭服务时出错', error);
       process.exit(1);
     }
   };
@@ -47,8 +46,7 @@ if (require.main === module) {
   process.on('SIGINT', () => shutdown('SIGINT'));
 
   controller.start().catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : '未知错误';
-    console.error(`Controller 启动失败：${message}`);
+    logger.error('启动失败', error);
     process.exit(1);
   });
 }

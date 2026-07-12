@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as yaml from 'yaml';
 import {
   ManifestSchema,
+  SimpleManifestSchema,
+  convertSimpleToFullManifest,
   formatValidationIssue,
   StepType,
 } from '@clawkit/shared';
@@ -33,6 +35,7 @@ export interface DryRunPlan {
 export class PlanServiceImpl {
   /**
    * 从文件读取并校验 manifest
+   * 自动识别简化配置和完整配置
    * @param filePath manifest 文件路径
    * @returns 校验后的 manifest，校验失败时返回错误信息列表
    */
@@ -49,15 +52,24 @@ export class PlanServiceImpl {
       return { errors: [`YAML 解析失败：${(error as Error).message}`] };
     }
 
-    const result = ManifestSchema.safeParse(raw);
-    if (!result.success) {
-      const errors = result.error.issues.map(
+    // 先尝试简化配置
+    const simpleResult = SimpleManifestSchema.safeParse(raw);
+    if (simpleResult.success) {
+      // 转换为完整配置
+      const fullManifest = convertSimpleToFullManifest(simpleResult.data);
+      return { manifest: fullManifest };
+    }
+
+    // 再尝试完整配置
+    const fullResult = ManifestSchema.safeParse(raw);
+    if (!fullResult.success) {
+      const errors = fullResult.error.issues.map(
         (issue) => `字段 [${issue.path.join('.')}]: ${formatValidationIssue(issue)}`,
       );
       return { errors };
     }
 
-    return { manifest: result.data };
+    return { manifest: fullResult.data };
   }
 
   /**

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,10 +7,12 @@ import { spawnSync } from 'node:child_process';
 import type { Manifest, Node, SshNode, Worker } from '@clawkit/shared';
 
 import { ManifestLoader } from './manifest-loader';
+import { Logger } from '../utils/logger';
 
 export interface ApplyOptions {
   dryRun?: boolean;
   onlyLocal?: boolean;
+  deploy?: boolean;
 }
 
 export interface ApplyFilePlan {
@@ -48,28 +51,26 @@ export class ApplyService {
    * @returns docker-compose.yml 文本（以换行结尾）
    */
   private renderDockerCompose(manifest: Manifest): string {
-    void manifest;
+    const port = this.resolveOpenClawLocalPort(manifest);
     return [
       '# OpenClaw Docker Compose 配置',
       '# 由 clawkit 自动生成，请勿手动编辑',
-      '',
-      "version: '3.8'",
       '',
       'services:',
       '  openclaw-gateway:',
       '    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}',
       '    container_name: openclaw-gateway',
       '    ports:',
-      '      - "18000:18000"',
+      `      - "${port}:${port}"`,
       '    volumes:',
       '      - ~/.openclaw:/home/node/.openclaw',
       '      - ~/.openclaw/workspace:/home/node/.openclaw/workspace',
       '    environment:',
-      '      - OPENCLAW_GATEWAY_PORT=18000',
+      `      - OPENCLAW_GATEWAY_PORT=${port}`,
       '      - OPENCLAW_GATEWAY_BIND=lan',
       '      - OPENCLAW_HOME_VOLUME=/home/node/.openclaw',
       '    healthcheck:',
-      "      test: [\"CMD\", \"node\", \"-e\", \"fetch('http://127.0.0.1:18000/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"]",
+      `      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:${port}/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]`,
       '      interval: 30s',
       '      timeout: 10s',
       '      start_period: 15s',
@@ -91,6 +92,16 @@ export class ApplyService {
         targetPath: path.join(os.homedir(), '.openclaw', 'docker-compose.yml'),
         description: 'OpenClaw 本地部署 docker-compose 配置',
         content: this.renderDockerCompose(context.manifest),
+      });
+    }
+    if (context.manifest.services.openCode?.installMode === 'local') {
+      filePlans.push({
+        nodeName: context.manifest.services.openCode.node,
+        // OpenCode local 模式固定安装到当前用户 HOME，因此按本地文件处理
+        nodeType: 'local',
+        targetPath: path.join(os.homedir(), '.opencode', 'start-opencode.sh'),
+        description: 'OpenCode 本地启动脚本',
+        content: this.renderOpenCodeStartScript(context.manifest),
       });
     }
     const notes = this.buildNotes(context.manifest, context.manifestPath, filePlans);
@@ -137,6 +148,12 @@ export class ApplyService {
         backupFiles.push(backup);
       }
       generatedFiles.push(filePlan.targetPath);
+    }
+
+    // 如果指定了 --deploy，执行真实部署
+    if (options.deploy) {
+      const context = this.loader.load(filePath);
+      this.executeDeployment(context.manifest);
     }
 
     return {
@@ -282,21 +299,24 @@ export class ApplyService {
     ];
 
     for (const project of worker.projects) {
-      plans.push({
-        nodeName: worker.node,
-        nodeType: node.type,
-        sshNode: node.type === 'ssh' ? node : undefined,
-        targetPath: this.resolveNodeFilePath(context, worker.node, `opencode-${project.key}.launch.yaml`, false),
-        description: `项目 ${project.key} 的 OpenCode 启动配置`,
-        content: this.renderOpenCodeLaunch(worker.id, project.key, project.repoPath, project.baseBranch, project.openCode.port, project.openCode.agent),
-      });
+      // 只为配置了独立端口的项目生成启动配置
+      if (project.openCode.port) {
+        plans.push({
+          nodeName: worker.node,
+          nodeType: node.type,
+          sshNode: node.type === 'ssh' ? node : undefined,
+          targetPath: this.resolveNodeFilePath(context, worker.node, `opencode-${project.key}.launch.yaml`, false),
+          description: `项目 ${project.key} 的 OpenCode 启动配置`,
+          content: this.renderOpenCodeLaunch(worker.id, project.key, project.repoPath, project.baseBranch, project.openCode.port, project.openCode.agent),
+        });
+      }
     }
 
     return plans;
   }
 
   private renderControllerEnv(manifest: Manifest, manifestPath: string, nodeName: string): string {
-    const token = manifest.services.openClaw.apiKey?.trim() || '__CHANGE_ME_OPENCLAW_TOKEN__';
+    const token = manifest.services.openClaw.apiKey?.trim() || this.generateWebhookToken();
     return [
       `CLAWKIT_PROFILE_NAME=${manifest.profile.name}`,
       `CLAWKIT_MANIFEST_PATH=${this.resolveManifestRuntimePath(manifest, manifestPath, nodeName)}`,
@@ -306,6 +326,13 @@ export class ApplyService {
       `CONTROLLER_PUBLIC_URL=${manifest.services.openClaw.publicUrl}`,
       '',
     ].join('\n');
+  }
+
+  /**
+   * 生成安全的 webhook token（64 字符十六进制）
+   */
+  private generateWebhookToken(): string {
+    return randomBytes(32).toString('hex');
   }
 
   private renderWorkerEnv(manifest: Manifest, manifestPath: string, worker: Worker): string {
@@ -329,24 +356,22 @@ export class ApplyService {
   }
 
   private renderOpenClawJson(manifest: Manifest): string {
-    const data = {
-      name: manifest.profile.name,
-      topology: manifest.profile.topology,
-      controller: {
-        endpoint: `${manifest.services.openClaw.publicUrl}${manifest.services.controller.apiPrefix}/openclaw/webhook`,
-        token: manifest.services.openClaw.apiKey?.trim() || '__CHANGE_ME_OPENCLAW_TOKEN__',
-      },
-      runtime: {
-        promptEngine: manifest.runtime.promptEngine,
-        memory: manifest.runtime.memory,
-      },
-      webhook: {
-        enabled: true,
-        source: 'openclaw',
+    // OpenClaw 2026.5.7+ 不再支持通过配置文件配置 webhooks
+    // webhook 配置需要在 OpenClaw UI 中手动完成
+    // 这里只生成基础配置，让 OpenClaw 自动初始化
+    const port = this.resolveOpenClawLocalPort(manifest);
+    const config = {
+      gateway: {
+        controlUi: {
+          allowedOrigins: [
+            `http://localhost:${port}`,
+            `http://127.0.0.1:${port}`,
+          ],
+        },
       },
     };
 
-    return `${JSON.stringify(data, null, 2)}\n`;
+    return `${JSON.stringify(config, null, 2)}\n`;
   }
 
   private renderSystemdService(input: {
@@ -380,6 +405,42 @@ export class ApplyService {
       'set -euo pipefail',
       `source "${environmentFile}"`,
       execStart,
+      '',
+    ].join('\n');
+  }
+
+  private renderOpenCodeStartScript(manifest: Manifest): string {
+    const openCodeService = manifest.services.openCode;
+    const port = this.resolveOpenCodeLocalPort(manifest);
+    const binaryPath = openCodeService?.binaryPath || path.join(os.homedir(), '.opencode', 'bin', 'opencode');
+    const workspace = openCodeService?.workspace || os.homedir();
+    const logFile = path.join(os.homedir(), '.opencode', 'opencode.log');
+    const pidFile = path.join(os.homedir(), '.opencode', 'opencode.pid');
+    const extraEnv = openCodeService?.env
+      ? Object.entries(openCodeService.env).map(([key, value]) => `export ${key}=${this.escapeShell(value)}`)
+      : [];
+
+    return [
+      '#!/usr/bin/env bash',
+      'set -euo pipefail',
+      '',
+      `OPENCODE_BIN=${this.escapeShell(binaryPath)}`,
+      `OPENCODE_WORKSPACE=${this.escapeShell(workspace)}`,
+      `OPENCODE_LOG=${this.escapeShell(logFile)}`,
+      `OPENCODE_PID=${this.escapeShell(pidFile)}`,
+      `OPENCODE_PORT=${port}`,
+      ...extraEnv,
+      '',
+      'mkdir -p "$(dirname "$OPENCODE_LOG")" "$OPENCODE_WORKSPACE"',
+      '',
+      'if [ -f "$OPENCODE_PID" ] && kill -0 "$(cat "$OPENCODE_PID")" 2>/dev/null; then',
+      '  echo "OpenCode 已在运行，PID: $(cat "$OPENCODE_PID")"',
+      '  exit 0',
+      'fi',
+      '',
+      'nohup "$OPENCODE_BIN" serve --hostname 127.0.0.1 --port "$OPENCODE_PORT" > "$OPENCODE_LOG" 2>&1 &',
+      'echo $! > "$OPENCODE_PID"',
+      'echo "OpenCode 已启动，PID: $(cat "$OPENCODE_PID")，日志: $OPENCODE_LOG"',
       '',
     ].join('\n');
   }
@@ -432,6 +493,28 @@ export class ApplyService {
     return isLocal
       ? path.join(os.homedir(), '.openclaw', 'openclaw.json')
       : '~/.openclaw/openclaw.json';
+  }
+
+  private resolveOpenClawLocalPort(manifest: Manifest): number {
+    try {
+      const url = new URL(manifest.services.openClaw.publicUrl);
+      const parsed = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+      return Number.isInteger(parsed) && parsed > 0 ? parsed : 18000;
+    } catch {
+      return 18000;
+    }
+  }
+
+  private resolveOpenCodeLocalPort(manifest: Manifest): number {
+    const ports = manifest.workers
+      .flatMap((worker) => worker.projects.map((project) => project.openCode.port))
+      .filter((port): port is number => typeof port === 'number' && port > 0);
+
+    if (ports.length === 0) {
+      return 4096;
+    }
+
+    return Math.min(...ports);
   }
 
   private resolveManifestRuntimePath(manifest: Manifest, manifestPath: string, nodeName: string): string {
@@ -547,7 +630,9 @@ export class ApplyService {
   private buildNotes(manifest: Manifest, manifestPath: string, filePlans: ApplyFilePlan[]): string[] {
     const notes = [
       `已读取 manifest：${manifestPath}`,
+      '如果这是简化配置转换后的结果，当前展示的是内部展开后的完整部署文件。',
       `建议先执行 pnpm --filter @clawkit/controller build && pnpm --filter @clawkit/worker build`,
+      '推荐启动方式：clawkit start 或 pnpm quickstart',
       `Controller 启动建议：node ${path.join(process.cwd(), 'packages/controller/dist/index.js')}`,
       `Worker 启动建议：node ${path.join(process.cwd(), 'packages/worker/dist/index.js')}`,
     ];
@@ -561,5 +646,282 @@ export class ApplyService {
     }
 
     return notes;
+  }
+
+  /**
+   * 执行真实部署（OpenClaw + OpenCode）
+   */
+  private executeDeployment(manifest: Manifest): void {
+    Logger.divider();
+    Logger.title('开始执行真实部署');
+
+    // 部署 OpenClaw
+    if (manifest.services.openClaw.deployMode === 'local') {
+      try {
+        this.deployOpenClaw(manifest);
+      } catch (error) {
+        Logger.warn(`OpenClaw 部署失败（非阻塞）：${(error as Error).message}`);
+        Logger.warn('可以稍后手动部署 OpenClaw，不影响 Controller/Worker 运行');
+      }
+    } else {
+      Logger.info(`OpenClaw deployMode=${manifest.services.openClaw.deployMode}，跳过自动部署`);
+    }
+
+    // 安装并启动 OpenCode
+    if (manifest.services.openCode && manifest.services.openCode.installMode === 'local') {
+      try {
+        this.installAndStartOpenCode(manifest);
+      } catch (error) {
+        Logger.warn(`OpenCode 安装失败（非阻塞）：${(error as Error).message}`);
+        Logger.warn('可以稍后手动安装 OpenCode，任务执行会退化为 placeholder 模式');
+      }
+    } else if (manifest.services.openCode) {
+      Logger.info(`OpenCode installMode=${manifest.services.openCode.installMode}，跳过自动安装`);
+    }
+
+    Logger.divider();
+    Logger.success('部署执行完成');
+  }
+
+  /**
+   * 部署 OpenClaw（local 模式）
+   */
+  private deployOpenClaw(manifest: Manifest): void {
+    Logger.info('正在部署 OpenClaw...');
+    const port = this.resolveOpenClawLocalPort(manifest);
+
+    const composeDir = path.join(os.homedir(), '.openclaw');
+    const composePath = path.join(composeDir, 'docker-compose.yml');
+
+    // 检查 docker-compose.yml 是否存在
+    if (!fs.existsSync(composePath)) {
+      throw new Error(`docker-compose.yml 不存在：${composePath}，请先执行 apply 生成配置文件`);
+    }
+
+    // 检查 Docker 是否可用
+    const dockerCheck = spawnSync('docker', ['--version'], { encoding: 'utf8' });
+    if (dockerCheck.status !== 0) {
+      throw new Error('Docker 不可用，请先安装 Docker');
+    }
+
+    // 检查 Docker Compose V2
+    const composeCheck = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8' });
+    if (composeCheck.status !== 0) {
+      throw new Error('Docker Compose V2 不可用，请升级 Docker');
+    }
+
+    Logger.info('执行 docker compose up -d...');
+
+    // 执行 docker compose up
+    const result = spawnSync('docker', ['compose', 'up', '-d'], {
+      cwd: composeDir,
+      encoding: 'utf8',
+      stdio: 'inherit',
+    });
+
+    if (result.status !== 0) {
+      throw new Error('docker compose up 执行失败');
+    }
+
+    Logger.success('OpenClaw 容器已启动');
+
+    // 等待健康检查
+    Logger.info('等待 OpenClaw 健康检查...');
+    const healthy = this.waitForHealthCheck(`http://127.0.0.1:${port}/healthz`, 60000);
+
+    if (healthy) {
+      Logger.success('OpenClaw 健康检查通过');
+      Logger.info('');
+      Logger.info(`下一步：请访问 http://127.0.0.1:${port} 完成 OpenClaw onboarding`);
+      Logger.info('  1. 创建账号');
+      Logger.info('  2. 配置 webhook: http://127.0.0.1:8787/api/openclaw/webhook');
+      Logger.info('  3. 生成并配置 token');
+      Logger.info('  4. 更新 manifest 中的 apiKey');
+      Logger.info('  5. 重启 controller');
+    } else {
+      Logger.warn('OpenClaw 健康检查超时（60s），但容器可能仍在启动中');
+      Logger.info('可以手动检查：docker logs -f openclaw-gateway');
+    }
+  }
+
+  /**
+   * 安装并启动 OpenCode（local 模式）
+   */
+  private installAndStartOpenCode(manifest: Manifest): void {
+    Logger.info('正在检查 OpenCode 安装状态...');
+
+    const port = this.resolveOpenCodeLocalPort(manifest);
+    const healthUrl = `http://127.0.0.1:${port}/global/health`;
+    const opencodeBin = path.join(os.homedir(), '.opencode', 'bin', 'opencode');
+    const opencodeDir = path.join(os.homedir(), '.opencode');
+    const startScript = path.join(opencodeDir, 'start-opencode.sh');
+    const logFile = path.join(opencodeDir, 'opencode.log');
+    const pidFile = path.join(opencodeDir, 'opencode.pid');
+
+    // 检查是否已安装
+    if (fs.existsSync(opencodeBin)) {
+      Logger.info('OpenCode 已安装，跳过安装步骤');
+    } else {
+      Logger.info('正在安装 OpenCode...');
+      this.installOpenCode();
+    }
+
+    // 检查是否已在运行
+    if (this.isOpenCodeRunning(pidFile)) {
+      Logger.info('OpenCode 已在运行，跳过启动步骤');
+      
+      // 验证健康检查
+      const healthy = this.waitForHealthCheck(healthUrl, 5000);
+      if (healthy) {
+        Logger.success('OpenCode 健康检查通过');
+        return;
+      } else {
+        Logger.warn('OpenCode 进程存在但健康检查失败，尝试重启...');
+        this.stopOpenCode(pidFile);
+      }
+    }
+
+    // 启动 OpenCode
+    Logger.info('正在启动 OpenCode...');
+    this.startOpenCode(startScript, logFile, pidFile);
+
+    // 等待健康检查
+    Logger.info('等待 OpenCode 健康检查...');
+    const healthy = this.waitForHealthCheck(healthUrl, 60000);
+
+    if (healthy) {
+      Logger.success('OpenCode 已成功启动并通过健康检查');
+      Logger.info(`日志文件：${logFile}`);
+      Logger.info(`PID 文件：${pidFile}`);
+    } else {
+      throw new Error('OpenCode 健康检查超时（60s），请查看日志：' + logFile);
+    }
+  }
+
+  /**
+   * 执行 OpenCode 安装脚本
+   */
+  private installOpenCode(): void {
+    const result = spawnSync('bash', ['-c', 'curl -fsSL https://opencode.ai/install | bash'], {
+      encoding: 'utf8',
+      stdio: 'inherit',
+    });
+
+    if (result.status !== 0) {
+      throw new Error('OpenCode 安装脚本执行失败');
+    }
+
+    Logger.success('OpenCode 安装完成');
+  }
+
+  /**
+   * 启动 OpenCode 服务
+   */
+  private startOpenCode(startScript: string, logFile: string, pidFile: string): void {
+    if (!fs.existsSync(startScript)) {
+      throw new Error(`启动脚本不存在：${startScript}，请先执行 apply 生成配置文件`);
+    }
+
+    // 确保日志目录存在
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
+
+    // 启动脚本内部负责后台启动服务并写入真实服务 PID。
+    const result = spawnSync('bash', [startScript], {
+      encoding: 'utf8',
+      stdio: 'inherit',
+    });
+
+    if (result.status !== 0) {
+      throw new Error('OpenCode 启动脚本执行失败');
+    }
+
+    const pid = fs.existsSync(pidFile) ? fs.readFileSync(pidFile, 'utf8').trim() : '未知';
+    Logger.info(`OpenCode 已在后台启动 (PID: ${pid})`);
+  }
+
+  /**
+   * 检查 OpenCode 是否正在运行
+   */
+  private isOpenCodeRunning(pidFile: string): boolean {
+    if (!fs.existsSync(pidFile)) {
+      return false;
+    }
+
+    try {
+      const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+      if (isNaN(pid)) {
+        return false;
+      }
+
+      // 检查进程是否存在
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 停止 OpenCode 服务
+   */
+  private stopOpenCode(pidFile: string): void {
+    if (!fs.existsSync(pidFile)) {
+      return;
+    }
+
+    try {
+      const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+      if (!isNaN(pid)) {
+        process.kill(pid, 'SIGTERM');
+        Logger.info(`已发送停止信号到 OpenCode 进程 (PID: ${pid})`);
+      }
+    } catch (error) {
+      Logger.warn(`停止 OpenCode 失败：${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * 等待健康检查通过
+   */
+  private waitForHealthCheck(url: string, timeoutMs: number): boolean {
+    const startTime = Date.now();
+    const interval = 2000; // 每 2 秒检查一次
+    const maxAttempts = Math.ceil(timeoutMs / interval);
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (this.checkHealth(url)) {
+        return true;
+      }
+
+      // 等待下一次检查
+      const elapsed = Date.now() - startTime;
+      if (elapsed < timeoutMs && attempt < maxAttempts - 1) {
+        const sleepTime = Math.min(interval, timeoutMs - elapsed);
+        spawnSync('sleep', [String(sleepTime / 1000)]);
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * 检查单次健康状态（同步方式）
+   */
+  private checkHealth(url: string): boolean {
+    try {
+      // 使用 curl 进行同步健康检查
+      const result = spawnSync('curl', ['-f', '-s', '-o', '/dev/null', '-w', '%{http_code}', url], {
+        encoding: 'utf8',
+        timeout: 5000,
+      });
+
+      if (result.status === 0 && result.stdout.trim() === '200') {
+        return true;
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
   }
 }

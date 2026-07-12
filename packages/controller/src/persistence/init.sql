@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS task_drafts (
   constraints_json TEXT NOT NULL,
   acceptance_criteria_json TEXT NOT NULL,
   status TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'MEDIUM',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 ) STRICT;

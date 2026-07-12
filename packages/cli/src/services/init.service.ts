@@ -3,7 +3,7 @@ import * as yaml from 'yaml';
 import { askInput, askSelect, askConfirm } from '../utils/prompt';
 
 /**
- * Init 交互式选项
+ * Init 交互式选项（完整配置）
  */
 interface InitOptions {
   /** 拓扑类型 */
@@ -19,12 +19,123 @@ interface InitOptions {
 }
 
 /**
+ * 简化配置选项
+ */
+interface SimpleInitOptions {
+  /** 项目列表 */
+  projects: Array<{
+    key: string;
+    path: string;
+    autoExecute: boolean;
+    dangerousOps: string[];
+  }>;
+  /** OpenClaw webhook token */
+  webhookToken: string;
+  /** OpenClaw URL（可选） */
+  openClawUrl?: string;
+}
+
+/**
  * InitService
- * 负责交互式生成最小可用的 clawkit.yaml
+ * 负责交互式生成配置文件（支持简化配置和完整配置）
  */
 export class InitService {
   /**
-   * 运行交互式配置生成流程
+   * 收集简化配置选项
+   */
+  async collectSimpleOptions(): Promise<SimpleInitOptions> {
+    const projects: SimpleInitOptions['projects'] = [];
+
+    // 1. 添加第一个项目
+    console.log('\n📦 配置第一个项目：\n');
+    const firstProject = await this.collectProjectInfo();
+    projects.push(firstProject);
+
+    // 2. 询问是否添加更多项目
+    let addMore = await askConfirm('是否添加更多项目？', false);
+    while (addMore) {
+      console.log('\n📦 配置下一个项目：\n');
+      const nextProject = await this.collectProjectInfo();
+      projects.push(nextProject);
+      addMore = await askConfirm('是否继续添加项目？', false);
+    }
+
+    // 3. 配置 OpenClaw
+    console.log('\n🔗 配置 OpenClaw 连接：\n');
+    const webhookToken = await askInput(
+      'OpenClaw Webhook Token（必填）',
+      'your-webhook-token-here'
+    );
+
+    const configureUrl = await askConfirm('是否配置 OpenClaw URL？', false);
+    let openClawUrl: string | undefined;
+    if (configureUrl) {
+      openClawUrl = await askInput('OpenClaw URL', 'http://127.0.0.1:18000');
+    }
+
+    return {
+      projects,
+      webhookToken,
+      openClawUrl,
+    };
+  }
+
+  /**
+   * 收集单个项目信息
+   */
+  private async collectProjectInfo(): Promise<SimpleInitOptions['projects'][0]> {
+    const key = await askInput('项目标识（key）', 'my-project');
+    const path = await askInput('项目路径（绝对路径）', '/path/to/your/project');
+    const autoExecute = await askConfirm('是否自动执行任务（不需要审批）？', false);
+
+    let dangerousOps: string[] = [];
+    if (!autoExecute) {
+      const configureDangerous = await askConfirm(
+        '是否配置危险操作关键词（强制审批）？',
+        true
+      );
+      if (configureDangerous) {
+        const dangerousOpsInput = await askInput(
+          '危险操作关键词（逗号分隔）',
+          'delete,drop,rm -rf,truncate'
+        );
+        dangerousOps = dangerousOpsInput.split(',').map((s) => s.trim()).filter(Boolean);
+      }
+    }
+
+    return {
+      key,
+      path,
+      autoExecute,
+      dangerousOps,
+    };
+  }
+
+  /**
+   * 生成简化配置 YAML
+   */
+  generateSimpleManifest(options: SimpleInitOptions): string {
+    const manifest: Record<string, unknown> = {
+      projects: options.projects.map((p) => ({
+        key: p.key,
+        path: p.path,
+        autoExecute: p.autoExecute,
+        ...(p.dangerousOps.length > 0 ? { dangerousOps: p.dangerousOps } : {}),
+      })),
+      openClaw: {
+        webhookToken: options.webhookToken,
+        ...(options.openClawUrl ? { url: options.openClawUrl } : {}),
+      },
+    };
+
+    return yaml.stringify(manifest, {
+      indent: 2,
+      lineWidth: 0,
+    });
+  }
+
+  /**
+   * 运行交互式配置生成流程（完整配置）
    * @param presetTopology 预设的拓扑类型（来自命令行参数）
    * @returns 生成的 YAML 字符串
    */

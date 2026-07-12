@@ -13,6 +13,7 @@ const { runOpenClawAdapterTests } = require('./openclaw-adapter.test');
 const { runDraftResponseFormatterTests } = require('./draft-response-formatter.test');
 const { runResultResponseFormatterTests } = require('./result-response-formatter.test');
 const { runOpenClawWebhookRouteTests } = require('./openclaw-webhook-route.test');
+const { runRuntimeRoutesTests } = require('./runtime-routes.test');
 const { runWebConsoleStaticTests } = require('./web-console-static.test');
 const { runSqliteTaskStoreTests } = require('./sqlite-task-store.test');
 
@@ -33,6 +34,7 @@ async function main() {
     runDraftResponseFormatterTests();
     runResultResponseFormatterTests();
     await runOpenClawWebhookRouteTests();
+    await runRuntimeRoutesTests();
     await runWebConsoleStaticTests();
     runSqliteTaskStoreTests();
     console.log('全部测试通过');

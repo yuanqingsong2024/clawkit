@@ -1,4 +1,4 @@
-import { TaskStatus } from '@clawkit/shared';
+import { TaskPriority, TaskStatus } from '@clawkit/shared';
 import { randomUUID } from 'crypto';
 
 import type { CreateTaskProtocol } from '../protocol/types';
@@ -33,6 +33,7 @@ export class TaskDraftServiceImpl implements TaskDraftService {
       constraints: protocol.constraints,
       acceptanceCriteria: protocol.acceptanceCriteria,
       status: TaskStatus.DRAFT,
+      priority: protocol.priority || TaskPriority.NORMAL,
       createdAt: now,
       updatedAt: now,
     };

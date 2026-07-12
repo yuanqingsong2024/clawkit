@@ -108,16 +108,20 @@ export class HealService {
           });
         }
 
-        const health = await this.checkHttp(`${this.deriveOpenCodeBaseUrl(project.openCode.port)}/global/health`);
-        if (!health.ok) {
-          issues.push({
-            code: 'heal.opencode.unreachable',
-            status: CheckStatus.WARN,
-            title: `OpenCode server 不可达：${project.key}`,
-            message: `未能访问 ${this.deriveOpenCodeBaseUrl(project.openCode.port)}/global/health：${health.message}`,
-            suggestion: `请先启动 opencode serve --hostname 127.0.0.1 --port ${project.openCode.port}`,
-            canAutoFix: false,
-          });
+        // 只检查配置了独立端口的项目
+        if (project.openCode.port) {
+          const health = await this.checkHttp(`${this.deriveOpenCodeBaseUrl(project.openCode.port)}/global/health`);
+          // HTTP 401 表示服务在运行但需要认证，视为可达
+          if (!health.ok && health.message !== 'HTTP 401') {
+            issues.push({
+              code: 'heal.opencode.unreachable',
+              status: CheckStatus.WARN,
+              title: `OpenCode server 不可达：${project.key}`,
+              message: `未能访问 ${this.deriveOpenCodeBaseUrl(project.openCode.port)}/global/health：${health.message}`,
+              suggestion: `请先启动 opencode serve --hostname 127.0.0.1 --port ${project.openCode.port}`,
+              canAutoFix: false,
+            });
+          }
         }
       }
 

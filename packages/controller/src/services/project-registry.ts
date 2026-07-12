@@ -1,14 +1,22 @@
-import fs from 'node:fs';
 import path from 'node:path';
-
-import { ManifestSchema, type OpenCodeConfig } from '@clawkit/shared';
+import * as fs from 'node:fs';
 import * as yaml from 'yaml';
+
+import {
+  type EditableSimpleManifest,
+  type SimpleProject,
+  EditableSimpleManifestSchema,
+  loadManifest,
+  type OpenCodeConfig,
+} from '@clawkit/shared';
 
 export interface ProjectDispatchConfig {
   projectKey: string;
   repoPath: string;
   branchBase: string;
   openCode: OpenCodeConfig;
+  nodeName: string;
+  nodeType: 'local' | 'ssh';
 }
 
 export interface ProjectRegistryOptions {
@@ -38,40 +46,89 @@ export class ProjectRegistry {
     return Array.from(this.projects.values());
   }
 
-  reload(manifestPath: string): void {
-    this.loadFromManifest(manifestPath);
+  /**
+   * 重新加载配置（从 manifest 文件）
+   */
+  reload(manifestPath?: string): void {
+    const pathToLoad = manifestPath ?? this.manifestPath;
+    if (pathToLoad) {
+      this.loadFromManifest(pathToLoad);
+    }
+  }
+
+  /**
+   * 重新加载配置（从项目列表）
+   * 用于热重载场景，直接传入新的项目列表
+   */
+  reloadFromProjects(projects: SimpleProject[]): void {
+    this.projects.clear();
+    for (const project of projects) {
+      this.projects.set(project.key, {
+        projectKey: project.key,
+        repoPath: project.path,
+        branchBase: project.baseBranch ?? 'main',
+        openCode: {
+          port: project.openCodePort ?? 4096,
+          agent: 'build',
+          mode: 'default',
+        },
+        nodeName: 'local-dev',
+        nodeType: 'local',
+      });
+    }
   }
 
   private loadFromManifest(manifestPath: string): void {
     const resolvedPath = path.resolve(manifestPath);
 
-    if (!fs.existsSync(resolvedPath)) {
-      throw new Error(`项目配置加载失败：manifest 文件不存在 ${resolvedPath}`);
+    const simpleManifest = this.tryLoadEditableSimpleManifest(resolvedPath);
+    if (simpleManifest !== null) {
+      this.projects.clear();
+      for (const project of simpleManifest.projects) {
+        this.projects.set(project.key, {
+          projectKey: project.key,
+          repoPath: project.path,
+          branchBase: project.baseBranch,
+          openCode: {
+            port: project.openCodePort,
+            agent: 'build',
+            mode: 'default',
+          },
+          nodeName: 'local-dev',
+          nodeType: 'local',
+        });
+      }
+      this.manifestPath = resolvedPath;
+      return;
     }
 
-    const yamlContent = fs.readFileSync(resolvedPath, 'utf8');
-    const parsed = yaml.parse(yamlContent);
-    const result = ManifestSchema.safeParse(parsed);
-
-    if (!result.success) {
-      const firstIssue = result.error.issues[0];
-      throw new Error(`项目配置加载失败：manifest 校验未通过：${firstIssue?.message ?? '未知错误'}`);
+    // 使用 shared 包的 loadManifest，自动支持简化配置和完整配置
+    let manifest;
+    try {
+      manifest = loadManifest(resolvedPath);
+    } catch (error) {
+      throw new Error(`项目配置加载失败：${error instanceof Error ? error.message : String(error)}`);
     }
 
-    const manifest = result.data;
     const nextProjects = new Map<string, ProjectDispatchConfig>();
 
     for (const worker of manifest.workers) {
+      const node = manifest.nodes[worker.node];
       for (const project of worker.projects) {
+        // 从 V1 openCode 配置读取
+        const openCode = project.openCode ?? { port: 4096, agent: 'build', mode: 'default' };
+
         nextProjects.set(project.key, {
           projectKey: project.key,
           repoPath: project.repoPath,
           branchBase: project.baseBranch,
           openCode: {
-            port: project.openCode.port,
-            agent: project.openCode.agent,
-            mode: project.openCode.mode,
+            port: openCode.port ?? 4096,
+            agent: openCode.agent ?? 'build',
+            mode: openCode.mode ?? 'default',
           },
+          nodeName: worker.node,
+          nodeType: node.type,
         });
       }
     }
@@ -81,5 +138,16 @@ export class ProjectRegistry {
       this.projects.set(projectKey, projectConfig);
     }
     this.manifestPath = resolvedPath;
+  }
+
+  private tryLoadEditableSimpleManifest(manifestPath: string): EditableSimpleManifest | null {
+    try {
+      const content = fs.readFileSync(manifestPath, 'utf-8');
+      const rawData = yaml.parse(content);
+      const result = EditableSimpleManifestSchema.safeParse(rawData);
+      return result.success ? result.data : null;
+    } catch {
+      return null;
+    }
   }
 }

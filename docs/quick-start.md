@@ -1,6 +1,36 @@
-# clawkit 一键部署脚本使用指南
+# clawkit 快速开始
 
-本文档介绍 clawkit 一键部署脚本的使用方法、适用场景和常见问题。
+本文档介绍如何用最短路径生成配置、部署并启动 clawkit 开发套餐。
+
+## 推荐路径：init 简化配置
+
+如果你的目标是搭建“即时通讯软件 → OpenClaw → OpenCode”的开发套餐，优先使用简化配置流：
+
+```bash
+pnpm build
+node ./packages/cli/dist/index.js init
+```
+
+初始化流程会逐步询问：
+
+1. 项目目录、项目标识
+2. 是否自动执行任务
+3. 是否配置危险操作关键词
+4. OpenClaw webhook token
+5. 是否补充 OpenClaw URL
+
+执行完成后会生成 `clawkit.yaml`。继续执行：
+
+```bash
+node ./packages/cli/dist/index.js doctor -f ./clawkit.yaml
+node ./packages/cli/dist/index.js apply -f ./clawkit.yaml
+```
+
+如需旧版完整配置流，仍可使用 `node ./packages/cli/dist/index.js init --full` 或 `setup`。
+
+## 脚本路径
+
+如果已经有 manifest，也可以继续使用脚本完成部署、启动与验证。
 
 ## 脚本概览
 
@@ -8,7 +38,8 @@ clawkit 提供三个一键脚本，降低内部试运行和首次使用成本：
 
 | 脚本 | 用途 | 适用场景 |
 |---|---|---|
-| `quick-start.sh` | 单机模式一键部署与启动 | 内部试运行、首次部署 |
+| `quick-start-simple.sh` | 简化配置优先的一键部署与启动 | 新用户、首次部署、快速试运行 |
+| `quick-start.sh` | 完整配置的一键部署与启动 | 高级场景、兼容旧流程 |
 | `quick-start-dev.sh` | 本地开发环境快速启动 | 频繁调试、开发测试 |
 | `smoke-test.sh` | 部署后快速验证 | 健康检查、验证部署 |
 
@@ -19,11 +50,11 @@ clawkit 提供三个一键脚本，降低内部试运行和首次使用成本：
 3. **清晰反馈**：每步输出中文日志，失败即停止
 4. **灵活可控**：支持跳过构建、仅部署不启动等参数
 
-## quick-start.sh（生产部署）
+## quick-start-simple.sh（推荐）
 
 ### 用途
 
-单机模式（all-in-one）一键部署与启动，适合内部试运行和首次部署。
+单机模式一键部署与启动，优先读取简化配置，适合首次部署和快速上手。
 
 ### 核心流程
 
@@ -41,8 +72,8 @@ clawkit 提供三个一键脚本，降低内部试运行和首次使用成本：
 #### 基础用法
 
 ```bash
-# 使用默认配置（examples/all-in-one.yaml）
-./scripts/quick-start.sh
+# 使用自动查找的默认配置（优先 clawkit.yaml / examples/simple.yaml）
+./scripts/quick-start-simple.sh
 
 # 或使用 pnpm 命令
 pnpm quickstart
@@ -52,35 +83,35 @@ pnpm quickstart
 
 ```bash
 # 使用自定义 manifest 文件
-./scripts/quick-start.sh -f ./my-config.yaml
+./scripts/quick-start-simple.sh -f ./my-config.yaml
 ```
 
 #### 跳过构建
 
 ```bash
 # 适合已构建过的情况，节省时间
-./scripts/quick-start.sh --skip-build
+./scripts/quick-start-simple.sh --skip-build
 ```
 
 #### 仅部署不启动
 
 ```bash
 # 只执行部署，不启动服务
-./scripts/quick-start.sh --no-start
+./scripts/quick-start-simple.sh --no-start
 ```
 
 #### 部署后自动测试
 
 ```bash
 # 部署完成后自动执行烟雾测试
-./scripts/quick-start.sh --smoke-test
+./scripts/quick-start-simple.sh --smoke-test
 ```
 
 ### 支持的参数
 
 | 参数 | 说明 | 默认值 |
 |---|---|---|
-| `-f, --file <path>` | manifest 文件路径 | `examples/all-in-one.yaml` |
+| `-f, --file <path>` | manifest 文件路径 | 自动查找 |
 | `--skip-build` | 跳过构建步骤 | 否 |
 | `--no-start` | 只部署不启动服务 | 否 |
 | `--smoke-test` | 部署后自动执行烟雾测试 | 否 |
@@ -88,7 +119,7 @@ pnpm quickstart
 
 ### manifest 路径同步行为
 
-执行 `quick-start.sh` 启动服务时，脚本会在启动前把本次使用的 manifest 路径同步写入 `data/controller-config.json`。
+执行 `quick-start-simple.sh` 启动服务时，脚本会在启动前把本次使用的 manifest 路径同步写入 `data/controller-config.json`。
 
 这样做的目的是：
 

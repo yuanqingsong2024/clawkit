@@ -2,9 +2,9 @@
 
 ## 1. 当前 CLI 能力
 
-当前 CLI 已经提供五个可运行命令：
+当前 CLI 已经提供一组以简化配置优先的可运行命令：
 
-- `init`：生成最小可用 manifest
+- `init`：默认生成简化配置；使用 `--full` 可生成完整配置
 - `doctor`：诊断 manifest 与环境
 - `plan`：输出 dry-run 执行计划
 - `apply`：生成并写入最小部署文件
@@ -14,11 +14,15 @@
 
 | 命令 | 状态 | 说明 |
 |---|---|---|
-| `clawkit init` | ✅ 可用 | 交互式生成 manifest |
+| `clawkit init` | ✅ 可用 | 交互式生成配置，默认走简化配置流 |
 | `clawkit doctor` | ✅ 可用 | 诊断配置与环境 |
 | `clawkit plan` | ✅ 可用 | 查看执行计划 |
 | `clawkit apply` | ✅ 可用 | 生成 env / systemd / 启动脚本 / OpenClaw 配置建议 |
 | `clawkit heal` | ✅ 可用 | 输出修复计划并自动修复部分本地文件 |
+| `clawkit start` | ✅ 可用 | 推荐入口，一键启动服务 |
+| `clawkit project` | ✅ 可用 | 管理简化配置中的项目列表 |
+| `clawkit status` | ✅ 可用 | 查看服务运行状态 |
+| `clawkit logs` | ✅ 可用 | 查看运行日志 |
 
 ## 3. init
 
@@ -30,18 +34,18 @@ clawkit init [options]
 
 | 选项 | 说明 |
 |---|---|
-| `-t, --topology <type>` | 指定拓扑：`all-in-one` / `hybrid` / `split` |
 | `-o, --output <path>` | 输出文件路径，默认 `./clawkit.yaml` |
+| `--full` | 生成完整配置（包含拓扑、nodes、services、workers、runtime 等全部字段） |
 
-### 当前交互项
+### 默认交互项（简化配置）
 
-1. 选择拓扑（若未通过参数指定）
-2. 输入配置名称
-3. 是否启用 Memory
-4. 选择 Memory Provider
-5. 是否启用 Notify
+1. 输入项目标识与项目路径
+2. 是否自动执行任务
+3. 是否配置危险操作关键词
+4. 输入 OpenClaw webhook token
+5. 可选输入 OpenClaw URL
 
-说明：当前 `init` 会固定生成 `runtime.promptEngine.mode: template`，确保输出配置可直接被后续命令读取。
+说明：默认 `init` 生成的是简化配置；如需旧版完整配置流，请使用 `clawkit init --full`。
 
 ## 4. doctor
 
@@ -64,6 +68,7 @@ clawkit doctor -f ./clawkit.yaml
 
 ```bash
 clawkit plan -f ./clawkit.yaml
+clawkit plan -f ./examples/simple.yaml
 ```
 
 输出内容包括：
@@ -79,6 +84,7 @@ clawkit plan -f ./clawkit.yaml
 ```bash
 clawkit apply -f ./clawkit.yaml
 clawkit apply -f ./clawkit.yaml --dry-run
+clawkit start
 ```
 
 当前负责：
@@ -112,7 +118,13 @@ clawkit heal -f ./clawkit.yaml --force
 推荐使用顺序：
 
 ```text
-init -> doctor -> plan -> apply -> heal
+init -> doctor -> plan -> start
+```
+
+如果你需要查看展开后的部署文件，再使用：
+
+```text
+init -> doctor -> plan -> apply --dry-run -> apply
 ```
 
 ## 9. 当前边界
