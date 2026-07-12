@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Clawkit",
+  "version": "0.1.0",
+  "identifier": "com.clawkit.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm --filter @clawkit/web dev --host 127.0.0.1 --port 5888 --strictPort",
+    "beforeBuildCommand": "pnpm --filter @clawkit/web build",
+    "frontendDist": "../../web/dist",
+    "devUrl": "http://127.0.0.1:5888"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Clawkit",
+        "width": 1440,
+        "height": 960,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}
