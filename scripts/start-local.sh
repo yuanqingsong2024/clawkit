@@ -6,7 +6,13 @@ write_controller_config() {
   local resolved_manifest_path
   resolved_manifest_path="$(node -e "console.log(require('node:path').resolve(process.argv[1]))" "$manifest_path")"
 
-  mkdir -p packages/controller/data
+  mkdir -p data packages/controller/data
+  cat > data/controller-config.json <<EOF
+{
+  "manifestPath": "${resolved_manifest_path}"
+}
+EOF
+
   cat > packages/controller/data/controller-config.json <<EOF
 {
   "manifestPath": "${resolved_manifest_path}"
@@ -71,6 +77,11 @@ case "$MODE" in
     export OPENCODE_EXECUTION_MODE="sdk"
     export OPENCODE_SERVER_BASE_URL="${OPENCODE_SERVER_BASE_URL:-http://127.0.0.1:4096}"
     export OPENCODE_SERVER_PASSWORD_ENV="${OPENCODE_SERVER_PASSWORD_ENV:-OPENCODE_SERVER_PASSWORD}"
+    if [ -z "${OPENCODE_SERVER_PASSWORD:-}" ]; then
+      echo "错误：OPENCODE_SERVER_PASSWORD 未设置。"
+      echo "请先执行：export OPENCODE_SERVER_PASSWORD=\"your-password\""
+      exit 1
+    fi
     pnpm --filter @clawkit/worker start
     ;;
   *)

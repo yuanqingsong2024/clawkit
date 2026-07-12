@@ -6,7 +6,8 @@
 
 ### 一键部署脚本（推荐）
 
-- `quick-start.sh`：单机模式一键部署与启动（适合内部试运行和首次部署）
+- `quick-start-simple.sh`：**简化版一键部署**（推荐，优先使用简化配置）
+- `quick-start.sh`：完整版一键部署（兼容旧流程与高级场景）
 - `quick-start-dev.sh`：本地开发环境快速启动（适合频繁调试）
 - `smoke-test.sh`：部署后快速验证关键服务是否可用
 
@@ -21,14 +22,20 @@
 ### 一键部署（推荐）
 
 ```bash
-# 使用默认配置一键部署
-./scripts/quick-start.sh
+# 使用简化配置一键部署（推荐）
+./scripts/quick-start-simple.sh
 
 # 或使用 pnpm 命令
 pnpm quickstart
+
+# 使用完整配置一键部署
+./scripts/quick-start.sh
+
+# 或使用 pnpm 命令
+pnpm quickstart:full
 ```
 
-详细使用方法请参考 [一键部署脚本使用指南](../docs/quick-start.md)。
+详细使用方法请参考 [简化版快速开始指南](../docs/simplified-quick-start.md) 或 [完整版一键部署脚本使用指南](../docs/quick-start.md)。
 
 ### 开发环境快速启动
 
@@ -52,14 +59,52 @@ pnpm smoke
 
 ## 详细使用方法
 
-### quick-start.sh（一键部署）
+### quick-start-simple.sh（简化版一键部署，推荐）
 
-**用途**：单机模式一键部署与启动，适合内部试运行和首次部署。
+**用途**：使用简化配置快速部署单机模式，适合新用户和快速上手。
 
 **基础用法**：
 
 ```bash
-# 使用默认配置
+# 使用默认配置（自动查找）
+./scripts/quick-start-simple.sh
+
+# 使用自定义配置
+./scripts/quick-start-simple.sh -f ./my-config.yaml
+
+# 跳过构建
+./scripts/quick-start-simple.sh --skip-build
+
+# 仅部署不启动
+./scripts/quick-start-simple.sh --no-start
+
+# 部署后自动测试
+./scripts/quick-start-simple.sh --smoke-test
+```
+
+**配置文件自动查找顺序**：
+
+1. `clawkit.yaml`（项目根目录）
+2. `examples/simple.yaml`（简化配置示例）
+3. `examples/minimal.yaml`（最小配置示例）
+4. `examples/all-in-one.yaml`（完整配置示例）
+
+**支持的参数**：
+
+- `-f, --file <path>`：manifest 文件路径（默认：自动查找）
+- `--skip-build`：跳过构建步骤
+- `--no-start`：只部署不启动服务
+- `--smoke-test`：部署后自动执行烟雾测试
+- `-h, --help`：显示帮助信息
+
+### quick-start.sh（完整版一键部署，兼容旧流程）
+
+**用途**：使用完整配置部署，适合高级用户、复杂场景或需要兼容旧流程时使用。
+
+**基础用法**：
+
+```bash
+# 使用默认完整配置
 ./scripts/quick-start.sh
 
 # 使用自定义配置
@@ -77,7 +122,7 @@ pnpm smoke
 
 **支持的参数**：
 
-- `-f, --file <path>`：manifest 文件路径（默认：examples/all-in-one.yaml）
+- `-f, --file <path>`：manifest 文件路径（默认：`examples/all-in-one.yaml`，仅旧版完整配置流）
 - `--skip-build`：跳过构建步骤
 - `--no-start`：只部署不启动服务
 - `--smoke-test`：部署后自动执行烟雾测试
@@ -163,6 +208,10 @@ export OPENCODE_SERVER_PASSWORD="your-password"
 ```
 
 > 说明：真实执行模式需要先手动启动 `opencode serve`，并确保 `OPENCODE_SERVER_PASSWORD_ENV` 对应的环境变量已设置。
+
+> 说明补充：如果使用桌面端的“启动 OpenCode”按钮，也需要先设置 `OPENCODE_SERVER_PASSWORD`，否则会直接返回失败提示，不会真正拉起服务。
+
+> 统一说明：无论是脚本启动还是桌面端一键启动，真实执行模式都依赖 `OPENCODE_SERVER_PASSWORD`，否则只会得到失败提示。
 
 > 补充说明：`start-local.sh` 也会在启动前同步 `data/controller-config.json`，避免页面保存的旧路径覆盖这次命令指定的 manifest。
 

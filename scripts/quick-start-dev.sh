@@ -32,7 +32,13 @@ write_controller_config() {
   local resolved_manifest_path
   resolved_manifest_path="$(node -e "console.log(require('node:path').resolve(process.argv[1]))" "$manifest_path")"
 
-  mkdir -p packages/controller/data
+  mkdir -p data packages/controller/data
+  cat > data/controller-config.json <<EOF
+{
+  "manifestPath": "${resolved_manifest_path}"
+}
+EOF
+
   cat > packages/controller/data/controller-config.json <<EOF
 {
   "manifestPath": "${resolved_manifest_path}"
@@ -90,6 +96,11 @@ if ! command -v pnpm &> /dev/null; then
   exit 1
 fi
 
+if ! command -v curl &> /dev/null; then
+  log_error "未找到 curl，请先安装 curl 用于健康检查"
+  exit 1
+fi
+
 if [ ! -f "package.json" ]; then
   log_error "当前目录不是项目根目录，请在项目根目录执行此脚本"
   exit 1
@@ -127,7 +138,13 @@ log_info "启动 controller（前台运行）..."
 pnpm --filter @clawkit/controller start &
 CONTROLLER_PID=$!
 
-sleep 3
+log_info "等待 controller 就绪..."
+for _ in $(seq 1 30); do
+  if curl -fsS "http://127.0.0.1:8787/api/health" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
 
 log_info "启动 worker（前台运行）..."
 pnpm --filter @clawkit/worker start &

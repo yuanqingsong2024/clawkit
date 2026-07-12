@@ -45,7 +45,13 @@ write_controller_config() {
   local resolved_manifest_path
   resolved_manifest_path="$(node -e "console.log(require('node:path').resolve(process.argv[1]))" "$manifest_path")"
 
-  mkdir -p packages/controller/data
+  mkdir -p data packages/controller/data
+  cat > data/controller-config.json <<EOF
+{
+  "manifestPath": "${resolved_manifest_path}"
+}
+EOF
+
   cat > packages/controller/data/controller-config.json <<EOF
 {
   "manifestPath": "${resolved_manifest_path}"
@@ -53,6 +59,73 @@ write_controller_config() {
 EOF
 
   log_info "已同步 controller manifestPath：${resolved_manifest_path}"
+}
+
+stop_by_pid_file() {
+  local name="$1"
+  local pid_file="$2"
+
+  if [ ! -f "$pid_file" ]; then
+    return 0
+  fi
+
+  local pid
+  pid="$(cat "$pid_file" 2>/dev/null || true)"
+  if [ -z "$pid" ]; then
+    rm -f "$pid_file"
+    return 0
+  fi
+
+  if ps -p "$pid" >/dev/null 2>&1; then
+    log_info "停止已有 $name 进程 (PID: $pid)"
+    kill "$pid" >/dev/null 2>&1 || true
+    sleep 1
+    if ps -p "$pid" >/dev/null 2>&1; then
+      kill -9 "$pid" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  rm -f "$pid_file"
+}
+
+wait_until_healthy() {
+  local url="$1"
+  local name="$2"
+  local retries=30
+
+  while [ "$retries" -gt 0 ]; do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+    retries=$((retries - 1))
+  done
+
+  log_error "$name 启动后未能在预期时间内就绪"
+  return 1
+}
+
+stop_listening_port() {
+  local port="$1"
+
+  if ! command -v lsof >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local pids
+  pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  if [ -z "$pids" ]; then
+    return 0
+  fi
+
+  for pid in $pids; do
+    log_warn "检测到端口 $port 被旧进程占用，正在停止 PID: $pid"
+    kill "$pid" >/dev/null 2>&1 || true
+    sleep 1
+    if ps -p "$pid" >/dev/null 2>&1; then
+      kill -9 "$pid" >/dev/null 2>&1 || true
+    fi
+  done
 }
 
 # ============================================================================
@@ -153,6 +226,11 @@ if ! command -v pnpm &> /dev/null; then
   exit 1
 fi
 
+if ! command -v curl &> /dev/null; then
+  log_error "未找到 curl，请先安装 curl 用于健康检查"
+  exit 1
+fi
+
 PNPM_VERSION=$(pnpm -v)
 log_info "pnpm 版本：$PNPM_VERSION"
 
@@ -215,7 +293,7 @@ fi
 log_step "步骤 5/7：执行部署（apply）"
 
 log_info "正在执行部署..."
-node ./packages/cli/dist/index.js apply -f "$MANIFEST_FILE"
+node ./packages/cli/dist/index.js apply -f "$MANIFEST_FILE" --deploy
 log_success "部署完成"
 
 # ============================================================================
@@ -239,6 +317,9 @@ else
   export WORKER_SUPPORTED_PROJECTS="clawkit"
   export WORKER_PLACEHOLDER_FALLBACK="true"
   write_controller_config "$CLAWKIT_MANIFEST_PATH"
+  stop_by_pid_file "controller" ".clawkit/controller.pid"
+  stop_by_pid_file "worker" ".clawkit/worker.pid"
+  stop_listening_port "8787"
   
   # 检查 OPENCLAW_WEBHOOK_TOKEN
   if [ -z "${OPENCLAW_WEBHOOK_TOKEN:-}" ]; then
@@ -259,9 +340,11 @@ else
     log_warn "无法获取 controller PID"
   fi
   
-  # 等待 controller 启动
-  log_info "等待 controller 启动..."
-  sleep 3
+  log_info "等待 controller 就绪..."
+  if ! wait_until_healthy "http://127.0.0.1:8787/api/health" "controller"; then
+    log_error "controller 启动失败，请查看日志：.clawkit/logs/controller.log"
+    exit 1
+  fi
   
   # 启动 worker
   log_info "启动 worker..."

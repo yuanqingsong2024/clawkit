@@ -25,7 +25,7 @@ fi
 if [ ! -f "test-all-in-one.yaml" ]; then
     echo "❌ 错误：test-all-in-one.yaml 不存在"
     echo "请先运行以下命令生成配置文件："
-    echo "  参考 docs/setup-wizard-all-in-one-test-guide.md"
+    echo "  参考 docs/archive/setup-wizard-all-in-one-test-guide.md"
     exit 1
 fi
 

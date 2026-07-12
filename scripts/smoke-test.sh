@@ -35,22 +35,36 @@ clawkit 烟雾测试脚本
 
 选项：
   --controller-url <url>  Controller 地址（默认：http://127.0.0.1:8787）
+  --manifest <path>       manifest 文件路径（默认：./clawkit.yaml）
   -h, --help              显示此帮助信息
 
-说明：
-  - 此脚本用于部署后快速验证关键服务是否可用
-  - 检查项：Controller 健康状态、Worker 注册状态、Web Console 可访问性
-  - 输出格式：通过/警告/失败 + 总结
+检查项：
+  1. Controller 健康状态（HTTP /api/health）
+  2. Worker 注册状态（查询 controller API）
+  3. Web Console 可访问性
+  4. manifest 文件可读取
+  5. 数据库可写入
+
+输出格式：
+  [通过] - 检查通过
+  [警告] - 检查有警告（非阻塞）
+  [失败] - 检查失败（阻塞）
+  非零退出码表示失败
 
 EOF
 }
 
 CONTROLLER_URL="${CONTROLLER_URL:-http://127.0.0.1:8787}"
+MANIFEST_PATH="${CLAWKIT_MANIFEST_PATH:-./clawkit.yaml}"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
     --controller-url)
       CONTROLLER_URL="$2"
+      shift 2
+      ;;
+    --manifest)
+      MANIFEST_PATH="$2"
       shift 2
       ;;
     -h|--help)
@@ -86,47 +100,91 @@ fi
 log_info "开始执行烟雾测试..."
 echo ""
 
+# ========== 1. Controller 健康检查 ==========
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$CONTROLLER_URL/api/health" 2>/dev/null || echo "000")
 
 if [ "$HTTP_CODE" = "200" ]; then
-  log_success "Controller 健康检查通过"
+  log_success "1. Controller 健康检查通过"
   ((PASS_COUNT++))
 elif [ "$HTTP_CODE" = "000" ]; then
-  log_error "Controller 无法连接（可能未启动或地址错误）"
+  log_error "1. Controller 无法连接（可能未启动或地址错误）"
   ((FAIL_COUNT++))
 else
-  log_warn "Controller 健康检查返回异常状态码：$HTTP_CODE"
+  log_warn "1. Controller 健康检查返回异常状态码：$HTTP_CODE"
   ((WARN_COUNT++))
 fi
 
+# ========== 2. Worker 注册状态 ==========
 WORKERS_RESPONSE=$(curl -s "$CONTROLLER_URL/api/workers" 2>/dev/null || echo "")
 
 if [ -n "$WORKERS_RESPONSE" ]; then
   WORKER_COUNT=$(echo "$WORKERS_RESPONSE" | grep -o '"id"' | wc -l | tr -d ' ')
   
   if [ "$WORKER_COUNT" -gt 0 ]; then
-    log_success "Worker 已注册（数量：$WORKER_COUNT）"
+    log_success "2. Worker 已注册（数量：$WORKER_COUNT）"
     ((PASS_COUNT++))
   else
-    log_warn "未发现已注册的 Worker"
+    log_warn "2. 未发现已注册的 Worker"
     ((WARN_COUNT++))
   fi
 else
-  log_error "无法获取 Worker 列表"
+  log_error "2. 无法获取 Worker 列表"
   ((FAIL_COUNT++))
 fi
 
+# ========== 3. Web Console 可访问性 ==========
 WEB_HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$CONTROLLER_URL/" 2>/dev/null || echo "000")
 
 if [ "$WEB_HTTP_CODE" = "200" ]; then
-  log_success "Web Console 可访问"
+  log_success "3. Web Console 可访问"
   ((PASS_COUNT++))
 elif [ "$WEB_HTTP_CODE" = "000" ]; then
-  log_error "Web Console 无法连接"
+  log_error "3. Web Console 无法连接"
   ((FAIL_COUNT++))
 else
-  log_warn "Web Console 返回异常状态码：$WEB_HTTP_CODE"
+  log_warn "3. Web Console 返回异常状态码：$WEB_HTTP_CODE"
   ((WARN_COUNT++))
+fi
+
+# ========== 4. manifest 文件可读取 ==========
+if [ -f "$MANIFEST_PATH" ]; then
+  if grep -q "profile:" "$MANIFEST_PATH" 2>/dev/null || grep -q "projects:" "$MANIFEST_PATH" 2>/dev/null; then
+    log_success "4. manifest 文件可读取（$MANIFEST_PATH）"
+    ((PASS_COUNT++))
+  else
+    log_error "4. manifest 文件格式无效：$MANIFEST_PATH"
+    ((FAIL_COUNT++))
+  fi
+else
+  log_warn "4. manifest 文件不存在（$MANIFEST_PATH），跳过检查"
+  ((WARN_COUNT++))
+fi
+
+# ========== 5. 数据库可写入 ==========
+DB_CHECK_RESPONSE=$(curl -s -X POST "$CONTROLLER_URL/api/system/db-check" 2>/dev/null || echo "")
+if echo "$DB_CHECK_RESPONSE" | grep -q '"writable"'; then
+  if echo "$DB_CHECK_RESPONSE" | grep -q '"writable":true'; then
+    log_success "5. 数据库可写入"
+    ((PASS_COUNT++))
+  else
+    log_error "5. 数据库不可写入"
+    ((FAIL_COUNT++))
+  fi
+else
+  # 如果 API 不存在，尝试直接检查数据库文件
+  DB_PATH="${CONTROLLER_DB_PATH:-./data/clawkit.db}"
+  if [ -f "$DB_PATH" ]; then
+    if [ -w "$DB_PATH" ]; then
+      log_success "5. 数据库文件可写入（$DB_PATH）"
+      ((PASS_COUNT++))
+    else
+      log_error "5. 数据库文件不可写入（$DB_PATH）"
+      ((FAIL_COUNT++))
+    fi
+  else
+    log_warn "5. 数据库文件不存在（$DB_PATH），跳过检查"
+    ((WARN_COUNT++))
+  fi
 fi
 
 echo ""
