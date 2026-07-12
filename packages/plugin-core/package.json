@@ -1,0 +1,34 @@
+{
+  "name": "@clawkit/plugin-core",
+  "version": "0.2.0",
+  "description": "ClawKit 插件系统核心模块",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@clawkit/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "vitest": "^2.1.9"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "clawkit",
+    "plugin",
+    "executor",
+    "trigger",
+    "notifier"
+  ],
+  "author": "",
+  "license": "MIT"
+}
