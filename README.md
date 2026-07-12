@@ -1,14 +1,60 @@
 # clawkit
 
-用于串联 OpenClaw、controller、worker 与 OpenCode，并提供最小部署配置能力的轻量 monorepo 工具集。
+用于串联 Claude Code、controller、worker 与 OpenCode，并提供一键部署能力的轻量 monorepo 工具集。
 
-clawkit 当前提供两条并行主线：一条是以 `clawkit` CLI 为入口的配置生成、诊断、部署预览与最小落地；另一条是围绕 controller / worker 建立的任务接入、草稿确认、派发执行与结果回传链路。仓库目标不是实现完整生产管理平台，而是把首个 MVP 所需的最小主链路收敛到可安装、可配置、可验证的状态。
+clawkit 提供完整的一键部署能力：从配置生成、服务部署、到运行验证的全流程自动化。同时提供围绕 controller / worker 建立的任务接入、草稿确认、派发执行与结果回传链路。
+
+## 🎉 v0.2.0 新增功能（2026-07-11）
+
+### 插件系统（@clawkit/plugin-core）
+- ✅ **执行器插件接口**（ExecutorPlugin）：支持自定义任务执行逻辑
+- ✅ **触发器插件接口**（TriggerPlugin）：支持自定义触发条件（手动、定时、事件、Webhook）
+- ✅ **通知器插件接口**（NotifierPlugin）：支持任务状态变更通知
+- ✅ **插件生命周期管理**：安装、启用、禁用、卸载
+- ✅ **插件沙箱隔离配置**：安全执行第三方插件
+
+### 插件市场（@clawkit/market）
+- ✅ **插件搜索与浏览 API**
+- ✅ **插件安装/卸载/更新服务**
+- ✅ **插件详情 API**
+- ✅ **插件注册表管理**
+
+### 流水线编排（@clawkit/pipeline）
+- ✅ **DAG 执行引擎**：支持拓扑排序、并行执行、条件执行
+- ✅ **流水线数据模型**：Pipeline、Stage 定义与验证
+- ✅ **流水线服务**：CRUD 操作、执行控制、统计信息
+- ✅ **REST API**：完整的流水线管理接口
+
+## 📦 历史版本
+
+### v0.1.x 核心能力
+- ✅ **一键部署**：`apply --deploy` 自动部署 Claude Code 和 OpenCode
+- ✅ **Onboarding 辅助**：`clawkit onboard` 交互式引导配置 webhook 和 token
+- ✅ **端到端验证**：`clawkit verify` 验证所有组件运行状态
+- ✅ manifest 校验与部署拓扑描述
+- ✅ Claude Code webhook 接入与任务协议识别
+- ✅ TaskDraft / TaskMemory / PromptDraft / 审批状态流转
+- ✅ approved 任务派发、worker 选择与执行结果回传
+- ✅ 轻量 Web Console（含 Setup 向导）
+- ✅ 单机、混合、双机三类示例配置
+
+详细说明请参考：[一键部署功能说明](./docs/one-click-deployment.md)
 
 ## 当前范围
 
+## 开发启动说明
+
+- 根目录 `pnpm dev` 默认启动 monorepo 内的通用开发服务，不包含 `@clawkit/desktop`。
+- `packages/desktop` 依赖 Rust / Cargo 与 Tauri 原生环境，需单独使用 `pnpm desktop:dev` 或 `pnpm desktop:start` 启动。
+- 如果只开发 Web Console，直接使用 `pnpm --filter @clawkit/web dev` 即可。
+
 当前仓库已覆盖的主能力：
 
-- `clawkit init / doctor / plan / apply / heal` CLI 主命令
+- `clawkit init / doctor / plan / apply / heal / onboard / verify` CLI 命令
+- **自动部署 OpenClaw**（local 模式自动 docker compose up）
+- **自动安装 OpenCode**（local 模式自动安装并启动）
+- **Onboarding 辅助工具**（交互式引导配置 webhook 和 token）
+- **端到端验证工具**（验证所有组件运行状态）
 - manifest 校验与部署拓扑描述
 - OpenClaw webhook 接入与任务协议识别
 - TaskDraft / TaskMemory / PromptDraft / 审批状态流转
@@ -19,10 +65,10 @@ clawkit 当前提供两条并行主线：一条是以 `clawkit` CLI 为入口的
 - 轻量 Web Console（总览、配置、部署、修复、状态、任务中心；含 OpenClaw onboarding 引导流程）
 - Setup 向导（预设选择 + YAML 编辑 + 编排执行）
 - 单机、混合、双机三类示例配置
-- 一键部署：支持 OpenClaw 本地 Docker 部署、OpenCode 本地一键安装，或外部实例集成
 
 当前阶段明确不做的事情：
 
+- OpenClaw 自动 onboarding（需要用户在 UI 手动操作）
 - 复杂 Web 管理后台
 - 自动 PR 或自动发布业务代码
 - controller 侧真实模型推理
@@ -135,12 +181,61 @@ OpenClaw ---> controller ---> worker ---> OpenCode
 
 - Node.js >= 20.0.0
 - pnpm >= 8.0.0
+- Docker（如果使用 local 模式部署 OpenClaw）
 
-### 安装与构建
+### 一键部署（推荐）
+
+从零开始部署简化模式（默认优先使用简化配置）：
 
 ```bash
+# 1. 安装依赖并构建
 pnpm install
 pnpm build
+
+# 2. 一键部署（默认优先使用 `clawkit.yaml` / `examples/simple.yaml`）
+pnpm quickstart
+
+# 3. 完成 OpenClaw onboarding（交互式引导）
+node ./packages/cli/dist/index.js onboard -f ./examples/simple.yaml
+
+# 4. 验证所有组件
+node ./packages/cli/dist/index.js verify -f ./examples/simple.yaml
+```
+
+执行完成后，你将拥有：
+- ✅ OpenClaw 运行在 `http://127.0.0.1:18000`
+- ✅ Controller 运行在 `http://127.0.0.1:8787`
+- ✅ Worker 已注册并在线
+- ✅ OpenCode 运行在 `http://127.0.0.1:4096`
+- ✅ Webhook 已配置并可接收任务
+
+详细说明请参考：[一键部署功能说明](./docs/one-click-deployment.md)
+
+### 自定义配置
+
+如果需要自定义配置，推荐直接使用 `init` 生成简化配置；如需旧版完整流程，再使用 setup 向导：
+
+```bash
+# 默认交互式生成简化配置
+node ./packages/cli/dist/index.js init
+
+# 如需生成完整配置
+node ./packages/cli/dist/index.js init --full
+
+# 旧版 setup 向导（完整配置流）
+node ./packages/cli/dist/index.js setup
+
+# 诊断配置
+node ./packages/cli/dist/index.js doctor -f ./clawkit.yaml
+
+# 执行部署
+node ./packages/cli/dist/index.js apply -f ./clawkit.yaml --deploy
+
+# 完成 onboarding
+node ./packages/cli/dist/index.js onboard -f ./clawkit.yaml
+
+# 验证部署
+node ./packages/cli/dist/index.js verify -f ./clawkit.yaml
 ```
 
 ### 常用命令
@@ -149,20 +244,29 @@ pnpm build
 # 查看 CLI 帮助
 node ./packages/cli/dist/index.js --help
 
-# 初始化 manifest
+# 交互式生成简化配置
 node ./packages/cli/dist/index.js init
 
-# 诊断示例配置
-node ./packages/cli/dist/index.js doctor -f ./examples/all-in-one.yaml
+# 诊断配置问题
+node ./packages/cli/dist/index.js doctor -f ./examples/simple.yaml
 
 # 预览部署计划
-node ./packages/cli/dist/index.js plan -f ./examples/all-in-one.yaml
+node ./packages/cli/dist/index.js plan -f ./examples/simple.yaml
 
-# 预览最小部署写入
-node ./packages/cli/dist/index.js apply -f ./examples/all-in-one.yaml --dry-run
+# 生成配置文件（不部署）
+node ./packages/cli/dist/index.js apply -f ./examples/simple.yaml --dry-run
 
-# 生成诊断与修复计划
-node ./packages/cli/dist/index.js heal -f ./examples/all-in-one.yaml --dry-run
+# 生成配置并执行部署
+node ./packages/cli/dist/index.js apply -f ./examples/simple.yaml --deploy
+
+# Onboarding 辅助
+node ./packages/cli/dist/index.js onboard -f ./examples/simple.yaml
+
+# 端到端验证
+node ./packages/cli/dist/index.js verify -f ./examples/simple.yaml
+
+# 生成修复计划
+node ./packages/cli/dist/index.js heal -f ./examples/simple.yaml --dry-run
 ```
 
 ### 快速脚本
@@ -170,18 +274,58 @@ node ./packages/cli/dist/index.js heal -f ./examples/all-in-one.yaml --dry-run
 根目录已提供便于试运行和联调的脚本：
 
 ```bash
+# 一键部署（简化配置优先）
 pnpm quickstart
+
+# 使用旧版完整配置脚本
+pnpm quickstart:full
+
+# 开发环境快速启动
 pnpm quickstart:dev
+
+# 烟雾测试
 pnpm smoke
 ```
 
 脚本详细说明见 [`scripts/README.md`](./scripts/README.md)。
 
+### 真实执行模式（推荐用于本地长期联调）
+
+如果你已经准备好 OpenCode 服务密码，并希望稳定使用“真实执行”而不是 placeholder fallback，可以直接使用根目录脚本三件套：
+
+```bash
+# 1. 先设置 OpenCode 服务密码
+export OPENCODE_SERVER_PASSWORD="your-password"
+
+# 2. 启动真实执行全链路（OpenCode + controller + worker）
+bash ./scripts/start-real-stack.sh
+
+# 3. 停止真实执行全链路
+bash ./scripts/stop-real-stack.sh
+
+# 4. 重启真实执行全链路
+bash ./scripts/restart-real-stack.sh
+```
+
+这套脚本默认会：
+
+- 使用 `clawkit.yaml` 作为 manifest
+- 使用 `replace-me` 作为本地测试用 OpenClaw webhook token
+- 启动真实 OpenCode 执行模式（`WORKER_PLACEHOLDER_FALLBACK=false`）
+- 将 PID 写入 `.clawkit/*.pid`
+
+启动完成后常用入口：
+
+- Web Console：`http://127.0.0.1:8787`
+- Controller 日志：`.clawkit/logs/controller.log`
+- Worker 日志：`.clawkit/logs/worker.log`
+- OpenCode 日志：`opencode.log`
+
 ## 最小联调路径
 
 如果只是验证链路是否打通，可以按下面的最小路径开始：
 
-1. 选择或生成一个 manifest，例如 `examples/all-in-one.yaml`
+1. 选择或生成一个 manifest，例如 `examples/simple.yaml`
 2. 执行 `pnpm install && pnpm build`
 3. 使用 `plan` 或 `apply --dry-run` 检查部署结果
 4. 运行 `node ./scripts/e2e-local-demo.js` 做本地最小联调
@@ -206,8 +350,10 @@ pnpm smoke
 按使用场景建议优先阅读这些文档：
 
 - [`docs/quick-start.md`](./docs/quick-start.md)：一键部署与快速上手
+- [`docs/simplified-quick-start.md`](./docs/simplified-quick-start.md)：简化配置快速开始
 - [`docs/cli.md`](./docs/cli.md)：CLI 命令说明
 - [`docs/manifest.md`](./docs/manifest.md)：manifest 结构与字段说明
+- [`docs/archive.md`](./docs/archive.md)：历史文档索引（阶段资料、验收记录、试运行记录）
 - [`docs/project-scope.md`](./docs/project-scope.md)：当前版本做什么、不做什么与 MVP 边界
 - [`docs/e2e.md`](./docs/e2e.md)：本地联调与真实 OpenCode 执行验证
 - [`docs/web-console.md`](./docs/web-console.md)：Web Console 与 Setup 向导

@@ -4,21 +4,50 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.2.0] - 2026-07-11
 
-### 新增
-- 新增 CI 流水线（`.github/workflows/ci.yml`），自动验证构建、测试与示例配置
-- 新增严格模式 E2E 验证脚本（`scripts/e2e-local-strict.sh`），验证真实 OpenCode 执行能力
-- 补充双机模式（Split）联调文档（`docs/e2e.md` 第 5 节）
+### 🎉 新增功能
 
-### 变更
-- 更新 `AGENTS.md`，明确项目已进入 MVP 主链路阶段，不再停留在初始化阶段
-- 更新 `CHANGELOG.md`，采用标准 Keep a Changelog 格式
+#### 插件系统（@clawkit/plugin-core）
 
-### 修复
-- 修正项目阶段文档与代码现状的口径冲突
-- 清理 `examples/.clawkit/local-dev/` 下的 160 个历史备份文件
-- 在 `.gitignore` 中补充 `*.bak` 规则
+- **执行器插件接口**（ExecutorPlugin）：支持自定义任务执行逻辑
+- **触发器插件接口**（TriggerPlugin）：支持自定义触发条件
+  - 手动触发、定时触发（基于 cron 表达式）、事件触发、Webhook 触发
+- **通知器插件接口**（NotifierPlugin）：支持任务状态变更通知
+  - 支持的通知类型：`task_created`、`task_completed`、`task_failed`、`task_cancelled`、`system_alert`
+  - 支持的优先级：`low`、`normal`、`high`、`urgent`
+- **插件生命周期管理**：安装、启用、禁用、卸载
+- **插件沙箱隔离配置**：安全执行第三方插件
+
+#### 插件市场（@clawkit/market）
+
+- **插件市场服务**（MarketService）：集中管理插件市场功能
+- **插件安装/卸载/更新服务**：完整的插件生命周期管理
+- **插件搜索与浏览 API**：支持按类型、名称、标签搜索
+- **插件详情 API**：获取插件完整信息
+- **插件注册表管理**：本地已安装插件的管理
+
+#### 流水线编排（@clawkit/pipeline）
+
+- **DAG 执行引擎**：基于有向无环图的任务编排
+  - 拓扑排序（Kahn 算法）、并行执行支持、条件执行、重试机制和超时控制、事件驱动架构
+- **流水线数据模型**：Pipeline、PipelineStage 定义与验证、循环依赖检测
+- **流水线服务**：CRUD 操作、执行控制（启动/暂停/恢复/取消）、执行历史和统计信息
+- **REST API**：完整的流水线管理接口（创建/更新/删除/执行/暂停/恢复/取消）
+
+### 🛠️ 改进
+
+- 更新文档结构，添加 v0.2.0 功能说明
+- 完善 README.md 功能描述
+- 补充 pipeline 包单元测试（13 个测试用例）
+- 优化 .gitignore 配置
+
+### 🔧 修复
+
+- 修复 market 包中的 `handleError` 函数重复定义
+- 修复 `plugin-registry.service.ts` 中 `updateConfig` 方法签名
+
+---
 
 ## [0.1.0] - 2026-03-11
 

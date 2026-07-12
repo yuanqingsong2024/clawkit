@@ -1,176 +1,163 @@
 /**
  * 插件管理器
- * 插件系统的核心组件，负责插件的注册、加载、生命周期管理和调度
+ * 统一管理所有类型插件的注册、加载和生命周期
  */
 import { EventEmitter } from 'events';
-import type { PluginMeta, PluginType, PluginConfig, PluginContext, PluginSource, PluginLoadResult, PluginValidationResult, PluginStats, PluginSandboxConfig } from '../types/plugin.types';
-import { PluginLifecycleManager } from './plugin-lifecycle.service';
-import { DefaultPluginLoader, type PluginDiscoveryOptions } from './plugin-loader';
+import { PluginLifecycleService, type LifecycleHooks } from './plugin-lifecycle.service';
+import type { PluginType, PluginLifecycleState, PluginMeta, PluginContext, PluginConfig, PluginStats, PluginLoadResult, PluginSandboxConfig } from '../types/plugin.types';
+import type { ExecutorPlugin, ExecutorPluginRegistry } from '../interfaces/executor-plugin.interface';
+import type { TriggerPlugin, TriggerPluginRegistry } from '../interfaces/trigger-plugin.interface';
+import type { NotifierPlugin, NotifierPluginRegistry } from '../interfaces/notifier-plugin.interface';
+/**
+ * 插件注册信息
+ */
+export interface PluginRegistration {
+    pluginId: string;
+    type: PluginType;
+    name: string;
+    version: string;
+    meta: PluginMeta;
+    instance?: ExecutorPlugin | TriggerPlugin | NotifierPlugin;
+    lifecycle: PluginLifecycleService;
+    config: PluginConfig;
+    enabled: boolean;
+}
 /**
  * 插件管理器选项
  */
 export interface PluginManagerOptions {
-    /** 插件目录 */
-    pluginDir?: string;
-    /** 数据目录 */
-    dataDir?: string;
-    /** 插件配置目录 */
-    configDir?: string;
-    /** 是否启用热更新 */
-    enableHotReload?: boolean;
-    /** 沙箱配置 */
+    /** 默认数据目录 */
+    defaultDataDir?: string;
+    /** 默认日志目录 */
+    defaultLogDir?: string;
+    /** 插件沙箱配置 */
     sandbox?: PluginSandboxConfig;
-    /** 自动加载内置插件 */
-    autoLoadBuiltin?: boolean;
-    /** 插件加载优先级 */
-    loadPriority?: ('executor' | 'trigger' | 'notifier')[];
+    /** 生命周期钩子 */
+    hooks?: Record<string, LifecycleHooks>;
 }
-/**
- * 插件状态信息
- */
-export interface PluginStatus {
-    /** 插件元信息 */
-    meta: PluginMeta;
-    /** 插件配置 */
-    config: PluginConfig;
-    /** 当前状态 */
-    state: string;
-    /** 是否已加载 */
-    loaded: boolean;
-    /** 是否活跃 */
-    active: boolean;
-    /** 是否启用 */
-    enabled: boolean;
-    /** 加载时间 */
-    loadedAt?: number;
-    /** 错误信息 */
-    error?: string;
-    /** 运行时间（毫秒） */
-    uptime?: number;
-}
-/**
- * 插件管理器事件
- */
-export type PluginManagerEvent = 'plugin:discovered' | 'plugin:loaded' | 'plugin:unloaded' | 'plugin:enabled' | 'plugin:disabled' | 'plugin:error' | 'plugin:stateChange';
 /**
  * 插件管理器
- * 统一管理所有类型的插件
+ * 管理所有插件的注册、加载、卸载和生命周期
  */
 export declare class PluginManager extends EventEmitter {
+    private plugins;
     private options;
-    private lifecycleManager;
-    private loader;
-    private pluginConfigs;
-    private pluginInstances;
+    private executorRegistry;
+    private triggerRegistry;
+    private notifierRegistry;
     constructor(options?: PluginManagerOptions);
     /**
-     * 确保必要目录存在
+     * 获取默认沙箱配置
      */
-    private ensureDirectories;
+    private getDefaultSandboxConfig;
     /**
-     * 设置生命周期事件监听
+     * 创建执行器注册表
      */
-    private setupLifecycleEvents;
+    private createExecutorRegistry;
     /**
-     * 设置热更新事件监听
+     * 创建触发器注册表
      */
-    private setupHotReloadEvents;
+    private createTriggerRegistry;
     /**
-     * 创建插件上下文
+     * 创建通知器注册表
      */
-    createContext(pluginMeta: PluginMeta): PluginContext;
+    private createNotifierRegistry;
     /**
-     * 发现插件
+     * 注册插件
      */
-    discoverPlugins(options?: PluginDiscoveryOptions): Promise<PluginMeta[]>;
+    register(type: PluginType, name: string, version: string, config: PluginConfig, context?: Partial<PluginContext>): PluginLoadResult;
     /**
      * 加载插件
      */
-    loadPlugin(source: PluginSource, config?: PluginConfig, meta?: PluginMeta): Promise<PluginLoadResult>;
+    load(pluginId: string): Promise<PluginLoadResult>;
     /**
-     * 从来源获取插件元信息
+     * 启动插件
      */
-    private getPluginMetaFromSource;
+    start(pluginId: string): Promise<PluginLoadResult>;
+    /**
+     * 停止插件
+     */
+    stop(pluginId: string): Promise<PluginLoadResult>;
     /**
      * 卸载插件
      */
-    unloadPlugin(name: string): Promise<void>;
+    unload(pluginId: string): Promise<PluginLoadResult>;
     /**
-     * 重新加载插件
+     * 获取插件
      */
-    reloadPlugin(name: string): Promise<PluginLoadResult>;
-    /**
-     * 启用插件
-     */
-    enablePlugin(name: string): Promise<void>;
-    /**
-     * 禁用插件
-     */
-    disablePlugin(name: string): Promise<void>;
-    /**
-     * 验证插件
-     */
-    validatePlugin(meta: PluginMeta): Promise<PluginValidationResult>;
-    /**
-     * 获取插件状态
-     */
-    getPluginStatus(name: string): PluginStatus | null;
-    /**
-     * 获取所有插件状态
-     */
-    getAllPluginStatus(): PluginStatus[];
-    /**
-     * 获取指定类型的插件
-     */
-    getPluginsByType(type: PluginType): PluginStatus[];
-    /**
-     * 获取插件实例
-     */
-    getPlugin<T = unknown>(name: string): T | undefined;
-    /**
-     * 检查插件是否存在
-     */
-    hasPlugin(name: string): boolean;
-    /**
-     * 检查插件是否已加载
-     */
-    isPluginLoaded(name: string): boolean;
+    get(pluginId: string): PluginRegistration | undefined;
     /**
      * 获取插件元信息
      */
-    getPluginMeta(name: string): PluginMeta | undefined;
+    getMeta(pluginId: string): PluginMeta | undefined;
     /**
-     * 获取插件配置
+     * 获取插件生命周期服务
      */
-    getPluginConfig(name: string): PluginConfig | undefined;
+    getLifecycle(pluginId: string): PluginLifecycleService | undefined;
+    /**
+     * 获取插件状态
+     */
+    getState(pluginId: string): PluginLifecycleState | undefined;
     /**
      * 获取插件统计信息
      */
-    getStats(): PluginStats;
+    getStats(pluginId: string): PluginStats | undefined;
     /**
-     * 启动所有插件
+     * 获取所有已注册的插件
      */
-    startAll(): Promise<void>;
+    getAllPlugins(): PluginMeta[];
     /**
-     * 停止所有插件
+     * 按类型获取插件
      */
-    stopAll(): Promise<void>;
+    getPluginsByType(type: PluginType): PluginMeta[];
     /**
-     * 加载所有已配置的插件
+     * 获取所有插件的统计信息
      */
-    loadConfiguredPlugins(): Promise<void>;
+    getAllStats(): PluginStats[];
     /**
-     * 保存插件配置
+     * 获取执行器注册表
      */
-    savePluginConfig(name: string): void;
+    getExecutorRegistry(): ExecutorPluginRegistry;
     /**
-     * 获取插件加载器
+     * 获取触发器注册表
      */
-    getLoader(): DefaultPluginLoader;
+    getTriggerRegistry(): TriggerPluginRegistry;
     /**
-     * 获取生命周期管理器
+     * 获取通知器注册表
      */
-    getLifecycleManager(): PluginLifecycleManager;
+    getNotifierRegistry(): NotifierPluginRegistry;
+    /**
+     * 检查插件是否存在
+     */
+    has(pluginId: string): boolean;
+    /**
+     * 批量加载插件
+     */
+    loadAll(): Promise<PluginLoadResult[]>;
+    /**
+     * 批量启动插件
+     */
+    startAll(): Promise<PluginLoadResult[]>;
+    /**
+     * 批量停止插件
+     */
+    stopAll(): Promise<PluginLoadResult[]>;
+    /**
+     * 获取运行中的插件数量
+     */
+    getRunningCount(): number;
+    /**
+     * 获取错误状态的插件
+     */
+    getErrorPlugins(): PluginStats[];
+    /**
+     * 设置生命周期钩子
+     */
+    setHooks(pluginId: string, hooks: LifecycleHooks): void;
+    /**
+     * 清理所有插件
+     */
+    clear(): Promise<void>;
 }
 /**
  * 获取全局插件管理器
@@ -181,7 +168,7 @@ export declare function getPluginManager(): PluginManager;
  */
 export declare function setPluginManager(manager: PluginManager): void;
 /**
- * 创建插件管理器
+ * 创建新的插件管理器
  */
 export declare function createPluginManager(options?: PluginManagerOptions): PluginManager;
 //# sourceMappingURL=plugin-manager.d.ts.map

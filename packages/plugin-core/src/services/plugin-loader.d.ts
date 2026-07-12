@@ -1,164 +1,92 @@
 /**
  * 插件加载器
- * 负责插件的发现、加载、验证和初始化
+ * 负责从文件系统或其他来源加载插件
  */
-import { EventEmitter } from 'events';
-import type { PluginMeta, PluginConfig, PluginContext, PluginSource, PluginLoadResult, PluginValidationResult, PluginSandboxConfig } from '../types/plugin.types';
-import type { PluginLifecycleService } from './plugin-lifecycle.service';
+import type { PluginLoadResult, PluginMeta, PluginConfig, PluginContext, PluginType } from '../types/plugin.types';
+import type { PluginManager } from './plugin-manager';
 /**
- * 插件发现配置
+ * 插件发现结果
  */
-export interface PluginDiscoveryOptions {
-    /** 插件搜索路径 */
-    paths?: string[];
-    /** 插件类型过滤 */
-    types?: ('executor' | 'trigger' | 'notifier')[];
-    /** 是否递归搜索子目录 */
-    recursive?: boolean;
-    /** 插件文件模式 */
-    filePattern?: RegExp;
-    /** 是否加载内置插件 */
-    includeBuiltin?: boolean;
-}
-/**
- * 插件加载配置
- */
-export interface PluginLoadOptions {
-    /** 插件来源 */
-    source: PluginSource;
+export interface DiscoveredPlugin {
+    /** 插件路径 */
+    path: string;
+    /** 插件元信息 */
+    meta: PluginMeta;
     /** 插件配置 */
-    config?: PluginConfig;
-    /** 插件上下文 */
-    context: PluginContext;
-    /** 沙箱配置 */
-    sandbox?: PluginSandboxConfig;
-    /** 是否启用热更新 */
-    hotReload?: boolean;
-    /** 依赖的其他插件 */
-    dependencies?: string[];
-    /** 优先级（数字越大优先级越高） */
-    priority?: number;
+    config: PluginConfig;
 }
 /**
- * 插件加载器接口
+ * 插件加载器选项
  */
-export interface PluginLoader {
-    /**
-     * 发现可用插件
-     */
-    discover(options?: PluginDiscoveryOptions): Promise<PluginMeta[]>;
-    /**
-     * 加载插件
-     */
-    load(options: PluginLoadOptions): Promise<PluginLoadResult>;
-    /**
-     * 卸载插件
-     */
-    unload(name: string): Promise<void>;
-    /**
-     * 重新加载插件
-     */
-    reload(name: string): Promise<PluginLoadResult>;
-    /**
-     * 验证插件
-     */
-    validate(meta: PluginMeta): Promise<PluginValidationResult>;
+export interface PluginLoaderOptions {
+    /** 插件目录 */
+    pluginDir?: string;
+    /** 插件目录列表 */
+    pluginDirs?: string[];
+    /** 是否递归扫描子目录 */
+    recursive?: boolean;
+    /** 插件配置文件名 */
+    configFileName?: string;
+    /** 允许的插件类型 */
+    allowedTypes?: PluginType[];
+    /** 插件过滤器 */
+    filter?: (meta: PluginMeta) => boolean;
 }
 /**
- * 默认插件加载器
+ * 插件加载器
+ * 负责发现和加载插件
  */
-export declare class DefaultPluginLoader extends EventEmitter implements PluginLoader {
+export declare class PluginLoader {
+    private options;
     private loadedPlugins;
-    private discoveryOptions;
-    private hotReloadWatchers;
-    private sandbox;
-    constructor(options?: PluginDiscoveryOptions);
+    constructor(options?: PluginLoaderOptions);
     /**
-     * 设置沙箱配置
+     * 发现插件目录中的所有插件
      */
-    setSandbox(config: PluginSandboxConfig): void;
+    discover(): Promise<DiscoveredPlugin[]>;
     /**
-     * 获取沙箱配置
+     * 在指定目录中发现插件
      */
-    getSandbox(): PluginSandboxConfig | undefined;
+    private discoverInDir;
     /**
-     * 发现可用插件
+     * 加载插件配置文件
      */
-    discover(options?: PluginDiscoveryOptions): Promise<PluginMeta[]>;
+    private loadPluginConfig;
     /**
-     * 在目录中搜索插件
+     * 加载插件模块
      */
-    private searchDirectory;
+    loadModule(pluginPath: string): Promise<unknown>;
     /**
-     * 加载插件元信息
+     * 注册并加载发现的插件
      */
-    private loadPluginMeta;
+    registerDiscoveredPlugins(manager: PluginManager, context?: Partial<PluginContext>): Promise<PluginLoadResult[]>;
     /**
-     * 检查插件类型是否匹配
+     * 从 package.json 发现 workspace 插件
      */
-    private matchType;
+    discoverWorkspacePlugins(workspaceRoot: string): Promise<DiscoveredPlugin[]>;
     /**
-     * 加载插件
+     * 推断插件类型
      */
-    load(options: PluginLoadOptions): Promise<PluginLoadResult>;
+    private inferPluginType;
     /**
-     * 加载内置插件
+     * 验证插件路径安全性
      */
-    private loadBuiltinPlugin;
+    validatePath(pluginPath: string, allowedPaths: string[]): Promise<boolean>;
     /**
-     * 加载 npm 包插件
+     * 获取已加载的插件模块
      */
-    private loadNpmPlugin;
+    getLoadedModule(pluginPath: string): unknown;
     /**
-     * 加载本地插件
+     * 清除加载缓存
      */
-    private loadLocalPlugin;
-    /**
-     * 加载远程插件
-     */
-    private loadRemotePlugin;
-    /**
-     * 设置热更新监视
-     */
-    private setupHotReload;
-    /**
-     * 卸载插件
-     */
-    unload(name: string): Promise<void>;
-    /**
-     * 重新加载插件
-     */
-    reload(name: string): Promise<PluginLoadResult>;
-    /**
-     * 验证插件
-     */
-    validate(meta: PluginMeta): Promise<PluginValidationResult>;
-    /**
-     * 获取已加载的插件
-     */
-    getLoadedPlugins(): Map<string, {
-        meta: PluginMeta;
-        config: PluginConfig;
-    }>;
-    /**
-     * 检查插件是否已加载
-     */
-    isLoaded(name: string): boolean;
-    /**
-     * 获取插件实例
-     */
-    getPluginInstance<T = unknown>(name: string): T | undefined;
-    /**
-     * 设置插件生命周期服务
-     */
-    setLifecycle(name: string, lifecycle: PluginLifecycleService): void;
-    /**
-     * 获取插件生命周期服务
-     */
-    getLifecycle(name: string): PluginLifecycleService | undefined;
+    clearCache(): void;
 }
 /**
- * 创建插件加载器实例
+ * 创建插件加载器
  */
-export declare function createPluginLoader(options?: PluginDiscoveryOptions): PluginLoader;
+export declare function createPluginLoader(options?: PluginLoaderOptions): PluginLoader;
+/**
+ * 从配置文件加载插件列表
+ */
+export declare function loadPluginManifest(manifestPath: string): Promise<DiscoveredPlugin[]>;
 //# sourceMappingURL=plugin-loader.d.ts.map

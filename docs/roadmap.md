@@ -2,13 +2,19 @@
 
 ## 1. 当前版本定位
 
-当前仓库面向 **首个可发布 MVP（建议版本 `v0.1.0`）**。
+当前仓库正在向 **v0.2.0** 版本演进。
 
-当前已经覆盖的最小主链路：
+已实现的增强功能：
+
+- **插件系统**：支持自定义执行器、触发器、通知器
+- **插件市场**：提供插件搜索、安装、卸载、更新功能
+- **流水线编排**：支持 DAG 任务编排与执行
+
+核心主链路（v0.1.0）：
 
 - manifest schema、examples、monorepo 结构
 - CLI：`init / doctor / plan / apply / heal`
-- controller：任务接入、草稿生成、审批、状态查询、OpenClaw webhook
+- controller：任务接入、草稿生成、审批、状态查询、Claude Code webhook
 - dispatch：`approved -> dispatched -> running -> done/failed`
 - worker：`register / heartbeat / pull / result`
 - executor：`OpenCodeExecutor` 主路径 + `PlaceholderExecutor` 回退路径
@@ -67,20 +73,38 @@
 - examples 与 schema 对齐
 - 文档与实现对齐
 
-## 4. 后续版本方向
+### M4：插件系统（v0.2.0）
 
-### v0.1.x
+- 插件核心模块（`@clawkit/plugin-core`）实现
+- 执行器插件接口（ExecutorPlugin）
+- 触发器插件接口（TriggerPlugin）
+- 通知器插件接口（NotifierPlugin）
+- 插件生命周期管理
+- 插件沙箱隔离配置
 
-- 补充更多错误处理与文档示例
-- 强化严格真实 OpenCode 联调说明
-- 收敛更多非阻塞文档漂移
+### M5：插件市场（v0.2.0）
 
-### v0.2.0
+- 插件市场服务（MarketService）
+- 插件安装/卸载/更新服务
+- 插件搜索与浏览 API
+- 插件详情 API
+- 插件注册表管理
 
-- 更稳定的混合模式落地指南
-- 更细粒度的执行结果结构
-- 更多 `heal` 自动修复项
-- 更完整的运行诊断与观测信息
+### M6：流水线编排（v0.2.0）
+
+- 流水线数据模型
+- DAG 执行引擎
+- 流水线服务
+- 流水线 API
+
+## 5. 后续版本方向
+
+### v0.2.x
+
+- 插件示例开发
+- 流水线可视化编辑
+- 插件配置热加载
+- 更完整的插件市场功能
 
 ### 暂不纳入路线图的内容
 
@@ -89,7 +113,7 @@
 - 企业级权限系统
 - 复杂分布式调度与任务队列
 
-## 5. 发布判断原则
+## 6. 发布判断原则
 
 满足以下条件即可认为首个 MVP 可以发布：
 

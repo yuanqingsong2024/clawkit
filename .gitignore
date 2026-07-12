@@ -37,3 +37,9 @@ data/
 examples/.clawkit/
 .opencode
 .opencode/commands/.gitkeep
+
+# 测试覆盖率
+coverage/
+
+# Tauri 桌面应用构建产物
+src-tauri/target/

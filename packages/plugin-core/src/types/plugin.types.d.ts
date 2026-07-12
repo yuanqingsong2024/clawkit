@@ -30,29 +30,39 @@ export interface PluginMeta {
     readonly homepage?: string;
     /** 插件依赖 */
     readonly dependencies?: Record<string, string>;
-    /** 入口文件 */
-    readonly main?: string;
-    /** 配置模式（JSON Schema） */
-    readonly configSchema?: object;
+    /** 沙箱配置 */
+    sandbox?: PluginSandboxConfig;
 }
 /**
  * 插件实例配置
  */
 export interface PluginConfig {
+    /** 插件类型 */
+    type?: PluginType;
     /** 插件名称 */
-    name: string;
+    name?: string;
     /** 插件版本 */
     version?: string;
     /** 插件 ID */
     pluginId?: string;
     /** 是否启用 */
-    enabled: boolean;
+    enabled?: boolean;
+    /** 插件描述 */
+    description?: string;
+    /** 插件作者 */
+    author?: string;
+    /** 插件主页 */
+    homepage?: string;
+    /** 插件依赖 */
+    dependencies?: string[];
+    /** 沙箱配置 */
+    sandbox?: PluginSandboxConfig;
     /** 插件特定配置 */
     config?: Record<string, unknown>;
     /** 优先级（数值越小优先级越高） */
     priority?: number;
     /** 依赖插件 ID 列表 */
-    dependencies?: string[];
+    pluginDependencies?: string[];
 }
 /**
  * 插件上下文
@@ -98,6 +108,8 @@ export type PluginSource = {
 export interface PluginLoadResult {
     /** 是否成功 */
     success: boolean;
+    /** 插件 ID */
+    pluginId?: string;
     /** 插件元信息 */
     meta?: PluginMeta;
     /** 插件实例 */
@@ -136,6 +148,8 @@ export interface PluginEvent {
     plugin?: PluginMeta;
     /** 插件名称 */
     name?: string;
+    /** 插件 ID */
+    pluginId?: string;
     /** 事件时间戳 */
     timestamp: number;
     /** 事件数据 */
@@ -156,14 +170,18 @@ export interface PluginSandboxConfig {
     enabled?: boolean;
     /** 允许访问的 Node.js 模块列表 */
     allowedModules?: string[];
+    /** 允许的全局对象列表 */
+    allowedGlobals?: string[];
     /** 允许访问的网络地址列表 */
     allowedNetworks?: string[];
     /** 允许访问的文件路径列表 */
     allowedPaths?: string[];
     /** 禁止访问的文件路径列表 */
-    forbiddenPaths?: string[];
+    deniedPaths?: string[];
     /** 是否允许网络访问 */
-    allowedNetwork?: boolean;
+    networkEnabled?: boolean;
+    /** 是否允许文件系统访问 */
+    fileSystemEnabled?: boolean;
     /** 是否允许子进程 */
     allowedSubprocess?: boolean;
     /** 最大内存限制（字节） */
@@ -172,22 +190,32 @@ export interface PluginSandboxConfig {
     maxMemoryMB?: number;
     /** 最大 CPU 时间（秒） */
     maxCpuSeconds?: number;
+    /** 最大 CPU 时间（毫秒） */
+    maxCpuTime?: number;
+    /** 最大文件大小（字节） */
+    maxFileSize?: number;
 }
 /**
  * 插件统计信息
  */
 export interface PluginStats {
-    /** 总插件数 */
-    total: number;
-    /** 已加载插件数 */
-    loaded: number;
-    /** 活跃插件数 */
-    active: number;
-    /** 错误插件数 */
-    error: number;
-    /** 按类型统计 */
-    byType: Record<PluginType, number>;
-    /** 按状态统计 */
-    byState: Record<PluginLifecycleState, number>;
+    /** 插件 ID */
+    pluginId: string;
+    /** 插件名称 */
+    name: string;
+    /** 插件版本 */
+    version: string;
+    /** 插件类型 */
+    type: PluginType;
+    /** 当前状态 */
+    state: PluginLifecycleState;
+    /** 加载时间 */
+    loadTime: number;
+    /** 运行时间（毫秒） */
+    uptime: number;
+    /** 错误数量 */
+    errorCount: number;
+    /** 最后错误信息 */
+    lastError?: string;
 }
 //# sourceMappingURL=plugin.types.d.ts.map
