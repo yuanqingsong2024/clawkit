@@ -10,6 +10,13 @@ export enum TaskStatus {
   CANCELLED = 'cancelled',
 }
 
+export enum TaskPriority {
+  LOW = 'low',
+  NORMAL = 'normal',
+  HIGH = 'high',
+  URGENT = 'urgent',
+}
+
 export enum ApprovalAction {
   APPROVE = 'approve',
   REVISE = 'revise',
