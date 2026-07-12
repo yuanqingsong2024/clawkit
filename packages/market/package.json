@@ -1,0 +1,20 @@
+{
+  "name": "@clawkit/market",
+  "version": "0.2.0",
+  "description": "ClawKit 插件市场模块",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@clawkit/plugin-core": "workspace:*",
+    "@clawkit/shared": "workspace:*",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.2.0"
+  }
+}

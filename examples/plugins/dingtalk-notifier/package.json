@@ -1,0 +1,16 @@
+{
+  "name": "@clawkit/plugin-dingtalk-notifier",
+  "version": "1.0.0",
+  "description": "钉钉通知器插件示例",
+  "main": "index.js",
+  "clawkit": {
+    "plugin": {
+      "name": "dingtalk-notifier",
+      "version": "1.0.0",
+      "type": "notifier",
+      "description": "钉钉 Webhook 通知器插件示例",
+      "author": "ClawKit Team",
+      "main": "index.js"
+    }
+  }
+}

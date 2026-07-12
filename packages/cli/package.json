@@ -1,21 +1,40 @@
 {
   "name": "@clawkit/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "clawkit 命令行工具",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./services": "./services.js"
+  },
+  "typesVersions": {
+    "*": {
+      "services": [
+        "./services.d.ts"
+      ]
+    }
+  },
   "bin": {
     "clawkit": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
+    "lint": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "pnpm build && node tests/run-tests.js"
   },
   "dependencies": {
-    "@clawkit/shared": "workspace:*"
+    "@clawkit/shared": "workspace:*",
+    "axios": "^1.16.1",
+    "chalk": "4",
+    "commander": "^14.0.3",
+    "js-yaml": "^4.1.1",
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "typescript": "^5.3.3"
   }
 }

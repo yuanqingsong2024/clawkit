@@ -1,31 +1,69 @@
-# clawkit 混合模式配置示例
-# OpenClaw + Controller 在云端，Worker + OpenCode 在本地
+profile:
+  name: "hybrid-dev-laptop"
+  version: "1.0.0"
+  topology: "hybrid"
+  description: "云端负责控制面，本地负责执行面，适合个人开发或远程协作"
 
-# 部署模式
-mode: hybrid
+nodes:
+  cloud-control:
+    type: "ssh"
+    host: "claw.example.com"
+    port: 22
+    user: "deploy"
+    keyPath: "~/.ssh/id_rsa"
+    workDir: "/srv/clawkit/control"
+  local-dev:
+    type: "local"
+    workDir: "./.clawkit/local-dev"
 
-# 云端配置
-cloud:
-  # OpenClaw 配置（占位）
-  openclaw:
-    # 待补充
-  
-  # Controller 配置（占位）
+services:
   controller:
-    # 待补充
+    node: "cloud-control"
+    port: 8080
+    apiPrefix: "/api"
+    publicUrl: "https://claw.example.com:8080"
+  openClaw:
+    node: "cloud-control"
+    publicUrl: "https://claw.example.com"
+    apiKey: "replace-me"
+  # 本地 OpenCode 服务，所有项目共享
+  openCode:
+    node: "local-dev"
+    installMode: "external"
+    publicUrl: "http://127.0.0.1:4096"
 
-# 本地配置
-local:
-  # OpenCode 配置（占位）
-  opencode:
-    # 待补充
-  
-  # Worker 配置（占位）
-  worker:
-    # 待补充
+workers:
+  - id: "laptop-worker"
+    node: "local-dev"
+    connectMode: "pull"
+    tags:
+      - "local"
+      - "hybrid"
+    projects:
+      - key: "desktop-client"
+        repoPath: "/Users/dev/projects/desktop-client"
+        baseBranch: "main"
+        openCode:
+          agent: "build"
+          mode: "default"
 
-# 通信配置（占位）
-communication:
-  # 待补充
+runtime:
+  promptEngine:
+    mode: "template"
+  memory:
+    enabled: true
+    provider: "redis"
+    url: "redis://claw.example.com:6379/0"
 
-# 注意：当前为项目初始化阶段，配置项仅为占位，不包含实际配置
+notify:
+  enabled: true
+  channels:
+    - "webhook"
+  webhook: "https://hooks.example.com/clawkit/hybrid"
+
+deploy:
+  timeout: 600
+  retryCount: 3
+  healthCheck:
+    enabled: true
+    interval: 60

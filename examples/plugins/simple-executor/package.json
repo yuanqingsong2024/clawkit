@@ -1,0 +1,16 @@
+{
+  "name": "@clawkit/plugin-simple-executor",
+  "version": "1.0.0",
+  "description": "简单执行器插件示例",
+  "main": "index.js",
+  "clawkit": {
+    "plugin": {
+      "name": "simple-executor",
+      "version": "1.0.0",
+      "type": "executor",
+      "description": "一个简单的命令执行器插件示例",
+      "author": "ClawKit Team",
+      "main": "index.js"
+    }
+  }
+}

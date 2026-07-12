@@ -1,0 +1,48 @@
+profile:
+  name: ui-quick-local
+  version: 1.0.0
+  topology: all-in-one
+nodes:
+  local-dev:
+    type: local
+    workDir: ./.clawkit/local-dev
+services:
+  controller:
+    node: local-dev
+    port: 8787
+    apiPrefix: /api
+  openClaw:
+    node: local-dev
+    publicUrl: http://127.0.0.1:18000
+workers:
+  - id: local-worker
+    node: local-dev
+    connectMode: pull
+    tags: []
+    projects:
+      - key: clawkit
+        repoPath: .
+        baseBranch: main
+        openCode:
+          port: 4096
+          agent: build
+          mode: default
+runtime:
+  promptEngine:
+    mode: template
+    temperature: 0.7
+    maxTokens: 4096
+    timeoutMs: 30000
+  memory:
+    enabled: true
+    provider: local
+    path: ./data/memory
+notify:
+  enabled: false
+  channels: []
+deploy:
+  timeout: 300
+  retryCount: 2
+  healthCheck:
+    enabled: true
+    interval: 30

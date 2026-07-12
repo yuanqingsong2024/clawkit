@@ -1,0 +1,25 @@
+export declare enum ControllerErrorCode {
+    TASK_DRAFT_NOT_FOUND = "controller.task_draft_not_found",
+    TASK_MEMORY_NOT_FOUND = "controller.task_memory_not_found",
+    PROMPT_DRAFT_NOT_FOUND = "controller.prompt_draft_not_found",
+    INVALID_TASK_PROTOCOL = "controller.invalid_task_protocol",
+    TASK_PROTOCOL_FIELD_MISSING = "controller.task_protocol_field_missing",
+    TASK_PROTOCOL_FIELD_INVALID = "controller.task_protocol_field_invalid",
+    INVALID_APPROVAL_ACTION = "controller.invalid_approval_action",
+    INVALID_TASK_STATUS_TRANSITION = "controller.invalid_task_status_transition",
+    PROMPT_DRAFT_VERSION_CONFLICT = "controller.prompt_draft_version_conflict",
+    PROMPT_ENGINE_NOT_CONFIGURED = "controller.prompt_engine_not_configured",
+    PERSISTENCE_INIT_FAILED = "controller.persistence_init_failed",
+    TASK_NOT_FOUND = "controller.task_not_found",
+    WORKER_NOT_FOUND = "controller.worker_not_found",
+    NO_AVAILABLE_WORKER = "controller.no_available_worker",
+    PROJECT_CONFIG_NOT_FOUND = "controller.project_config_not_found",
+    AUTH_UNAUTHORIZED = "controller.auth_unauthorized",
+    AUTH_FORBIDDEN = "controller.auth_forbidden",
+    INVALID_REQUEST = "controller.invalid_request",
+    DUPLICATE_REQUEST = "controller.duplicate_request",
+    DRY_RUN_UNSUPPORTED = "controller.dry_run_unsupported",
+    RESULT_PENDING = "controller.result_pending",
+    CANCEL_UNSUPPORTED = "controller.cancel_unsupported"
+}
+//# sourceMappingURL=errors.d.ts.map

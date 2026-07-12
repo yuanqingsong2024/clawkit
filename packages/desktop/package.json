@@ -1,0 +1,19 @@
+{
+  "name": "@clawkit/desktop",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "clawkit 桌面宿主壳",
+  "scripts": {
+    "dev": "tauri dev --config src-tauri/tauri.conf.json",
+    "build": "tauri build --config src-tauri/tauri.conf.json",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "typescript": "^5.3.3"
+  }
+}

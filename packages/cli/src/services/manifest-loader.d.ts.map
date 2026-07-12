@@ -1,0 +1,1 @@
+{"version":3,"file":"manifest-loader.d.ts","sourceRoot":"","sources":["manifest-loader.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAE,QAAQ,EAAE,MAAM,iBAAiB,CAAC;AAIhD,MAAM,WAAW,cAAc;IAC7B,QAAQ,EAAE,QAAQ,CAAC;IACnB,YAAY,EAAE,MAAM,CAAC;IACrB,WAAW,EAAE,MAAM,CAAC;CACrB;AAED,qBAAa,cAAc;IACzB,OAAO,CAAC,QAAQ,CAAC,WAAW,CAAyB;IAErD,IAAI,CAAC,QAAQ,EAAE,MAAM,GAAG,cAAc;CAcvC"}

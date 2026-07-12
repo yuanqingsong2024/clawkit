@@ -9,6 +9,101 @@
 - **对话与解释**：必须使用中文
 - **代码标识符**：遵循 TypeScript 社区惯例（通常为英文）
 
+## 项目结构与构建
+
+### Monorepo 结构
+
+这是一个 pnpm workspace monorepo，工作区定义在 `packages/*`：
+
+- `packages/cli`：命令行工具（`init / doctor / plan / apply / heal`）
+- `packages/controller`：控制器服务（HTTP API、webhook 接入、任务派发、SQLite 持久化）
+- `packages/worker`：工作节点（注册、心跳、拉取任务、执行任务、结果回传）
+- `packages/web`：轻量 Web Console（React + Vite + Tailwind）
+- `packages/shared`：共享代码（schema、接口、类型、校验工具）
+- `packages/templates`：模板位目录（部署文件由 CLI 运行时生成，不是静态模板）
+
+### 关键构建顺序
+
+**controller 依赖 cli**：`packages/controller/package.json` 的 build 脚本会先构建 cli：
+```bash
+pnpm --filter @clawkit/cli build && tsc && ...
+```
+
+修改 cli 后必须重新构建 controller。
+
+### 常用命令
+
+```bash
+# 根目录 monorepo 命令（会递归执行所有 package）
+pnpm build          # 构建所有包
+pnpm test           # 运行所有测试
+pnpm lint           # 类型检查所有包
+pnpm clean          # 清理所有构建产物
+
+# 快速启动脚本
+pnpm quickstart     # 一键部署（优先使用 ./scripts/quick-start-simple.sh）
+pnpm quickstart:full # 旧版完整配置一键部署（./scripts/quick-start.sh）
+pnpm quickstart:dev # 开发环境快速启动（./scripts/quick-start-dev.sh）
+pnpm smoke          # 烟雾测试（./scripts/smoke-test.sh）
+
+# CLI 命令（需要先 pnpm build）
+node ./packages/cli/dist/index.js --help
+node ./packages/cli/dist/index.js init
+node ./packages/cli/dist/index.js doctor -f ./examples/simple.yaml
+node ./packages/cli/dist/index.js plan -f ./examples/simple.yaml
+node ./packages/cli/dist/index.js apply -f ./examples/simple.yaml --dry-run
+
+# 单包命令（进入对应 package 目录）
+cd packages/controller && pnpm build
+cd packages/worker && pnpm start
+cd packages/web && pnpm dev
+```
+
+## 核心链路理解
+
+### 运行时组件关系
+
+```
+OpenClaw --webhook--> controller --派发--> worker --调用--> OpenCode
+                          ^
+                          |
+                     Web Console
+```
+
+**最小运行要求**：
+- 只想打开页面查看配置/状态：至少启动 `controller`
+- 想验证任务派发与 worker 状态：同时启动 `controller` 和 `worker`
+- 想验证 OpenClaw webhook 接入：还需要准备 OpenClaw 侧调用入口
+- 想验证真实执行而不是 placeholder fallback：还需要准备 OpenCode 服务
+
+**关键边界**：
+- `e2e-local-demo.js` 默认允许 placeholder fallback，适合验证链路打通
+- 若要验证真实 OpenCode 执行，需要先启动 `opencode serve` 并关闭 `WORKER_PLACEHOLDER_FALLBACK`
+- controller 使用 SQLite 持久化，默认数据库路径为 `data/clawkit.db`
+- Web Console 保存 manifest 后不会自动刷新运行态，需要手动重启 controller/worker
+
+### 关键环境变量
+
+**Controller**：
+- `OPENCLAW_WEBHOOK_TOKEN`：webhook 鉴权 token（必须与 OpenClaw 配置一致）
+- `CONTROLLER_DB_PATH`：SQLite 数据库路径（默认 `data/clawkit.db`）
+- `CONTROLLER_ENABLE_PERSISTENCE`：是否启用持久化（默认 `true`）
+- `CLAWKIT_MANIFEST_PATH`：manifest 文件路径
+
+**Worker**：
+- `WORKER_PLACEHOLDER_FALLBACK`：是否允许 placeholder 回退（`true` / `false`）
+- `OPENCODE_SERVER_BASE_URL`：OpenCode 服务地址（默认 `http://127.0.0.1:4096`）
+- `OPENCODE_SERVER_PASSWORD`：OpenCode 服务密码
+- `OPENCODE_SERVER_PASSWORD_ENV`：密码环境变量名（默认 `OPENCODE_SERVER_PASSWORD`）
+
+### 三种部署拓扑
+
+1. **all-in-one**：OpenClaw、controller、worker、OpenCode 部署在同一台机器
+2. **hybrid**：OpenClaw + controller 在云端，worker + OpenCode 在本地
+3. **split**：OpenClaw + controller 在 A 机器，worker + OpenCode 在 B 机器
+
+示例配置见 `examples/simple.yaml`、`examples/minimal.yaml`、`examples/all-in-one.yaml`、`examples/hybrid.yaml`、`examples/split.yaml`。
+
 ## 开发原则
 
 ### 1. 最小可用版本优先
@@ -71,16 +166,6 @@ try {
   throw new Error(`部署失败：${error.message}`);
 }
 ```
-
-## 项目结构规范
-
-### Monorepo 组织
-
-- `packages/cli`：命令行工具，不包含业务逻辑
-- `packages/controller`：控制器服务，负责任务调度
-- `packages/worker`：工作节点，负责执行任务
-- `packages/shared`：共享代码，包含类型定义、工具函数
-- `packages/templates`：配置模板，不包含逻辑代码
 
 ### 依赖管理
 
@@ -156,21 +241,48 @@ feat(cli): 添加 init 命令
 - 不要修改不相关的代码
 - 不要删除现有功能（除非明确要求）
 
-## 当前阶段限制
+## 项目阶段与范围
 
-**第一阶段：项目初始化**
+### 已完成阶段
 
-允许：
-- 创建目录结构
-- 配置构建工具
-- 编写基础文档
-- 创建最小骨架代码
+**第一阶段：项目初始化**（已完成）
 
-禁止：
-- 实现业务逻辑
-- 添加复杂依赖
-- 创建 Web UI
-- 实现权限系统
+- ✅ 创建目录结构
+- ✅ 配置构建工具
+- ✅ 编写基础文档
+- ✅ 创建最小骨架代码
+
+**第二阶段：MVP 主链路实现**（已完成）
+
+- ✅ controller / worker 任务派发与执行链路
+- ✅ OpenClaw webhook 接入与协议解析
+- ✅ TaskDraft / TaskMemory / PromptDraft 草稿与审批流
+- ✅ Web Console 轻量控制台
+- ✅ SQLite 持久化
+- ✅ OpenCode 执行链路（含 placeholder fallback）
+- ✅ 三种拓扑示例配置与最小部署能力
+
+### 当前阶段范围
+
+**当前版本包含**：
+
+- manifest schema 与三种拓扑示例（all-in-one / hybrid / split）
+- CLI：`init / doctor / plan / apply / heal`
+- controller：任务协议解析、草稿审批、HTTP API、webhook 接入、派发编排
+- worker：注册、心跳、拉取任务、执行任务、结果回传
+- Web Console：总览、配置、部署、修复、状态、任务中心、Setup 向导
+- 本地 E2E 联调脚本与最小部署自动化
+
+**当前版本明确不做**（不是缺陷）：
+
+- 复杂 Web 管理后台能力
+- 自动 PR 或自动部署生产业务代码
+- 复杂远程环境编排
+- 多 worker 复杂调度与 push 模式派发
+- 复杂权限系统
+- controller 侧真实大模型生成 Prompt
+
+详细范围说明请参考 [`docs/project-scope.md`](./docs/project-scope.md)。
 
 ## 问题处理
 
