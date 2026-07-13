@@ -99,7 +99,7 @@ export interface PipelineExecution {
   /** 触发者 */
   triggeredBy?: string;
   /** 执行的节点及其状态 */
-  stageExecutions: Record<string, StageStatus>;
+  stageExecutions?: Record<string, StageStatus>;
   /** 执行上下文 */
   context?: PipelineExecutionContext;
   /** 错误信息 */
@@ -217,7 +217,8 @@ export function getPipelineStatusSummary(_pipeline: Pipeline, execution?: Pipeli
     case 'pending':
       return '等待执行';
     case 'running':
-      const runningCount = Object.values(execution.stageExecutions).filter((s) => s === 'running').length;
+      const stageExecs = execution.stageExecutions || {};
+      const runningCount = Object.values(stageExecs).filter((s) => s === 'running').length;
       return `运行中 (${runningCount} 个节点执行中)`;
     case 'completed':
       return '已完成';

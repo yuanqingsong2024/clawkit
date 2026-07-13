@@ -1,128 +1,281 @@
 /**
- * 流水线服务
- * 管理流水线的创建、更新、删除和执行
+ * Pipeline 服务
+ * 管理流水线的创建、更新、执行和监控
  */
 
-import { EventEmitter } from 'events';
-import { randomUUID } from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 import type {
-  PipelineDefinition,
+  Pipeline,
   PipelineExecution,
-  PipelineStatus,
-  PipelineEvent,
-  PipelineStats,
-  PipelineValidationResult,
-} from '../types/pipeline.types';
-import { DAGExecutionEngine, createDAGExecutionEngine } from '../engine/dag-engine';
+  PipelineStage,
+  PipelineTriggerType,
+} from '../models';
+import { DAGEngine, type StageExecutor, type StageExecutionContext, type StageExecutionResult } from '../engine/dag-engine';
 
 /**
- * 流水线存储接口
+ * Pipeline 服务接口
  */
-export interface PipelineStore {
-  save(pipeline: PipelineDefinition): Promise<void>;
-  get(id: string): Promise<PipelineDefinition | undefined>;
+export interface IPipelineService {
+  /** 创建流水线 */
+  create(name: string, stages?: PipelineStage[], options?: {
+    description?: string;
+    triggers?: Pipeline['triggers'];
+    variables?: Pipeline['variables'];
+    config?: Pipeline['config'];
+  }): Promise<Pipeline>;
+  /** 获取流水线 */
+  get(id: string): Promise<Pipeline | null>;
+  /** 列出所有流水线 */
+  list(): Promise<Pipeline[]>;
+  /** 更新流水线 */
+  update(id: string, updates: Partial<Pipeline>): Promise<Pipeline | null>;
+  /** 删除流水线 */
   delete(id: string): Promise<boolean>;
-  list(projectKey?: string): Promise<PipelineDefinition[]>;
+  /** 执行流水线 */
+  execute(id: string, triggerType?: string): Promise<PipelineExecution>;
+  /** 获取执行记录 */
+  getExecution(id: string): Promise<PipelineExecution | null>;
+  /** 获取执行历史 */
+  getExecutionHistory(pipelineId: string): Promise<PipelineExecution[]>;
+  /** 取消执行 */
+  cancelExecution(executionId: string): Promise<boolean>;
+  /** 验证流水线 */
+  validate(pipeline: Pipeline): { valid: boolean; errors: string[] };
+  /** 获取统计信息 */
+  getStats(): { total: number; running: number; completed: number; failed: number };
 }
 
 /**
- * 执行记录存储接口
+ * Pipeline 存储接口
  */
-export interface ExecutionStore {
-  save(execution: PipelineExecution): Promise<void>;
-  get(id: string): Promise<PipelineExecution | undefined>;
-  list(pipelineId: string, limit?: number): Promise<PipelineExecution[]>;
-  getLatest(pipelineId: string): Promise<PipelineExecution | undefined>;
+export interface IPipelineRepository {
+  save(pipeline: Pipeline): Promise<void>;
+  findById(id: string): Promise<Pipeline | null>;
+  findAll(): Promise<Pipeline[]>;
+  delete(id: string): Promise<boolean>;
+  saveExecution(execution: PipelineExecution): Promise<void>;
+  findExecutionById(id: string): Promise<PipelineExecution | null>;
+  findExecutionsByPipelineId(pipelineId: string): Promise<PipelineExecution[]>;
 }
 
 /**
- * 流水线服务选项
+ * Pipeline 服务配置
  */
 export interface PipelineServiceOptions {
-  /** 存储实现 */
-  store?: PipelineStore;
-  /** 执行记录存储 */
-  executionStore?: ExecutionStore;
-  /** 默认超时时间（毫秒） */
-  defaultTimeout?: number;
-  /** 最大并发执行数 */
-  maxConcurrentExecutions?: number;
+  maxConcurrency?: number;
+  stageTimeout?: number;
 }
 
 /**
- * 流水线服务
+ * 默认阶段执行器
+ * 提供默认的阶段执行逻辑
  */
-export class PipelineService extends EventEmitter {
-  private store: PipelineStore;
-  private executionStore: ExecutionStore;
-  private maxConcurrentExecutions: number;
-  private runningExecutions: Map<string, PipelineExecution> = new Map();
-  private engine: DAGExecutionEngine;
+export class DefaultStageExecutor implements StageExecutor {
+  async execute(
+    stage: PipelineStage,
+    _context: StageExecutionContext
+  ): Promise<StageExecutionResult> {
+    const startTime = Date.now();
 
-  constructor(options: PipelineServiceOptions = {}) {
-    super();
-    this.store = options.store || new InMemoryPipelineStore();
-    this.executionStore = options.executionStore || new InMemoryExecutionStore();
-    this.maxConcurrentExecutions = options.maxConcurrentExecutions || 10;
-    this.engine = createDAGExecutionEngine();
+    try {
+      // 如果有命令，执行命令
+      if (stage.command) {
+        const result = await this.executeCommand(stage.command, {
+          cwd: stage.workingDir,
+          env: stage.env,
+        });
 
-    // 设置引擎事件转发
-    this.engine.addEventListener('*', (event) => {
-      this.emit(event.type, event);
+        if (!result.success) {
+          return {
+            success: false,
+            error: {
+              code: 'COMMAND_FAILED',
+              message: `命令执行失败: ${stage.command}`,
+            },
+            duration: Date.now() - startTime,
+          };
+        }
+
+        return {
+          success: true,
+          output: {
+            stdout: result.stdout || '',
+            stderr: result.stderr || '',
+            exitCode: result.exitCode,
+          },
+          duration: Date.now() - startTime,
+        };
+      }
+
+      // 如果有工作目录配置但没有命令
+      if (stage.workingDir) {
+        return {
+          success: true,
+          output: {
+            message: `阶段 ${stage.name} 已配置工作目录: ${stage.workingDir}`,
+          },
+          duration: Date.now() - startTime,
+        };
+      }
+
+      // 默认成功
+      return {
+        success: true,
+        output: {
+          message: `阶段 ${stage.name} 执行完成`,
+        },
+        duration: Date.now() - startTime,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 'EXECUTION_ERROR',
+          message: error instanceof Error ? error.message : '未知错误',
+        },
+        duration: Date.now() - startTime,
+      };
+    }
+  }
+
+  private async executeCommand(
+    command: string,
+    options: { cwd?: string; env?: Record<string, string> }
+  ): Promise<{ success: boolean; stdout?: string; stderr?: string; exitCode?: number; error?: string }> {
+    return new Promise((resolve) => {
+      const { spawn } = require('child_process');
+      const child = spawn(command, [], {
+        shell: true,
+        cwd: options.cwd,
+        env: { ...process.env, ...options.env },
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout?.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      child.stderr?.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      child.on('close', (code: number) => {
+        resolve({
+          success: code === 0,
+          stdout,
+          stderr,
+          exitCode: code ?? undefined,
+        });
+      });
+
+      child.on('error', (err: Error) => {
+        resolve({
+          success: false,
+          error: err.message,
+        });
+      });
     });
+  }
+}
+
+/**
+ * Pipeline 服务实现
+ */
+export class PipelineService implements IPipelineService {
+  private readonly repository: IPipelineRepository;
+  private readonly stageExecutor: StageExecutor;
+  private readonly options: Required<PipelineServiceOptions>;
+  private readonly engines = new Map<string, DAGEngine>();
+  private stats = { total: 0, running: 0, completed: 0, failed: 0 };
+
+  constructor(
+    repository: IPipelineRepository,
+    stageExecutor?: StageExecutor,
+    options?: PipelineServiceOptions
+  ) {
+    this.repository = repository;
+    this.stageExecutor = stageExecutor || new DefaultStageExecutor();
+    this.options = {
+      maxConcurrency: options?.maxConcurrency ?? 4,
+      stageTimeout: options?.stageTimeout ?? 300000,
+    };
   }
 
   /**
    * 创建流水线
    */
-  async create(definition: Omit<PipelineDefinition, 'id' | 'createdAt' | 'updatedAt'>): Promise<PipelineDefinition> {
-    const pipeline: PipelineDefinition = {
-      ...definition,
-      id: randomUUID(),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+  async create(
+    name: string,
+    stages: PipelineStage[],
+    options?: {
+      description?: string;
+      triggers?: Pipeline['triggers'];
+      variables?: Pipeline['variables'];
+      config?: Pipeline['config'];
+    }
+  ): Promise<Pipeline> {
+    const id = uuidv4();
+    const now = Date.now();
+    
+    const pipeline: Pipeline = {
+      meta: {
+        id,
+        name,
+        description: options?.description,
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      stages: stages || [],
+      triggers: options?.triggers,
+      variables: options?.variables,
+      config: options?.config,
     };
 
-    // 验证流水线
-    const validation = this.engine.validatePipeline(pipeline);
-    if (!validation.valid) {
-      throw new Error(`流水线验证失败: ${validation.errors.join(', ')}`);
-    }
-
-    await this.store.save(pipeline);
+    await this.repository.save(pipeline);
+    this.stats.total++;
     return pipeline;
+  }
+
+  /**
+   * 获取流水线
+   */
+  async get(id: string): Promise<Pipeline | null> {
+    return this.repository.findById(id);
+  }
+
+  /**
+   * 列出所有流水线
+   */
+  async list(): Promise<Pipeline[]> {
+    return this.repository.findAll();
   }
 
   /**
    * 更新流水线
    */
-  async update(id: string, updates: Partial<PipelineDefinition>): Promise<PipelineDefinition> {
-    const existing = await this.store.get(id);
+  async update(id: string, updates: Partial<Pipeline>): Promise<Pipeline | null> {
+    const existing = await this.repository.findById(id);
     if (!existing) {
-      throw new Error(`流水线 ${id} 不存在`);
+      return null;
     }
 
-    // 检查是否有正在运行的执行
-    const runningExecution = await this.executionStore.getLatest(id);
-    if (runningExecution && runningExecution.status === 'running') {
-      throw new Error(`流水线 ${id} 正在运行，无法更新`);
-    }
-
-    const updated: PipelineDefinition = {
+    const updated: Pipeline = {
       ...existing,
-      ...updates,
-      id: existing.id,
-      createdAt: existing.createdAt,
-      updatedAt: Date.now(),
+      meta: {
+        ...existing.meta,
+        ...updates.meta,
+        updatedAt: Date.now(),
+      },
+      stages: updates.stages ?? existing.stages,
+      triggers: updates.triggers ?? existing.triggers,
+      variables: updates.variables ?? existing.variables,
+      config: updates.config ?? existing.config,
     };
 
-    // 重新验证
-    const validation = this.engine.validatePipeline(updated);
-    if (!validation.valid) {
-      throw new Error(`流水线验证失败: ${validation.errors.join(', ')}`);
-    }
-
-    await this.store.save(updated);
+    await this.repository.save(updated);
     return updated;
   }
 
@@ -130,324 +283,260 @@ export class PipelineService extends EventEmitter {
    * 删除流水线
    */
   async delete(id: string): Promise<boolean> {
-    // 检查是否有正在运行的执行
-    const runningExecution = await this.executionStore.getLatest(id);
-    if (runningExecution && runningExecution.status === 'running') {
-      throw new Error(`流水线 ${id} 正在运行，无法删除`);
+    const deleted = await this.repository.delete(id);
+    if (deleted) {
+      this.stats.total = Math.max(0, this.stats.total - 1);
     }
-
-    return this.store.delete(id);
-  }
-
-  /**
-   * 获取流水线
-   */
-  async get(id: string): Promise<PipelineDefinition | undefined> {
-    return this.store.get(id);
-  }
-
-  /**
-   * 列出流水线
-   */
-  async list(projectKey?: string): Promise<PipelineDefinition[]> {
-    return this.store.list(projectKey);
-  }
-
-  /**
-   * 验证流水线
-   */
-  validate(definition: PipelineDefinition): PipelineValidationResult {
-    const result = this.engine.validatePipeline(definition);
-    return {
-      valid: result.valid,
-      errors: result.errors,
-      warnings: result.warnings || [],
-    };
+    return deleted;
   }
 
   /**
    * 执行流水线
    */
-  async execute(
-    pipelineId: string,
-    trigger?: PipelineExecution['trigger'],
-    variables?: Record<string, unknown>,
-  ): Promise<PipelineExecution> {
-    const pipeline = await this.store.get(pipelineId);
+  async execute(id: string, triggerType?: string): Promise<PipelineExecution> {
+    const pipeline = await this.repository.findById(id);
     if (!pipeline) {
-      throw new Error(`流水线 ${pipelineId} 不存在`);
+      throw new Error(`流水线不存在: ${id}`);
     }
 
-    // 检查并发限制
-    if (this.runningExecutions.size >= this.maxConcurrentExecutions) {
-      throw new Error('已达到最大并发执行数，请稍后再试');
-    }
-
-    // 检查是否已有运行中的执行
-    const latestExecution = await this.executionStore.getLatest(pipelineId);
-    if (latestExecution && latestExecution.status === 'running') {
-      throw new Error(`流水线 ${pipelineId} 已有执行正在运行`);
-    }
+    const executionId = uuidv4();
+    const trigger = (triggerType || 'manual') as PipelineTriggerType;
 
     // 创建执行记录
     const execution: PipelineExecution = {
-      id: randomUUID(),
-      pipelineId,
-      pipelineVersion: pipeline.version,
-      status: 'running',
-      trigger: trigger || { type: 'manual' },
-      startTime: Date.now(),
-      nodeResults: new Map(),
-      context: {
-        executionId: '',
-        variables: variables || {},
-        nodeOutputs: new Map(),
-        history: [],
-      },
-      triggeredBy: trigger?.source,
+      id: executionId,
+      pipelineId: id,
+      triggerType: trigger,
+      status: 'pending',
+      createdAt: Date.now(),
+      stageExecutions: {},
     };
-    execution.context.executionId = execution.id;
 
-    // 保存执行记录
-    await this.executionStore.save(execution);
-    this.runningExecutions.set(execution.id, execution);
+    // 初始化所有节点状态
+    for (const stage of pipeline.stages) {
+      execution.stageExecutions![stage.id] = 'pending';
+    }
 
-    // 异步执行
-    this.executePipeline(pipeline, execution).catch((err) => {
-      console.error(`流水线 ${pipelineId} 执行失败:`, err);
+    await this.repository.saveExecution(execution);
+    this.stats.running++;
+
+    // 异步执行（不阻塞）
+    this.runExecution(executionId, pipeline).catch(() => {
+      // 错误已在 runExecution 中处理
     });
 
     return execution;
   }
 
   /**
-   * 执行流水线（内部方法）
+   * 运行执行
    */
-  private async executePipeline(pipeline: PipelineDefinition, execution: PipelineExecution): Promise<void> {
+  private async runExecution(executionId: string, pipeline: Pipeline): Promise<void> {
+    const engine = new DAGEngine({
+      maxConcurrency: this.options.maxConcurrency,
+      stageTimeout: this.options.stageTimeout,
+    });
+    engine.setExecutor(this.stageExecutor);
+    this.engines.set(executionId, engine);
+
+    // 监听事件更新执行状态
+    engine.on('stageStart', ({ stageId }) => {
+      this.updateStageStatus(executionId, stageId, 'running');
+    });
+
+    engine.on('stageComplete', ({ stageId }) => {
+      this.updateStageStatus(executionId, stageId, 'completed');
+    });
+
+    engine.on('stageFailed', ({ stageId }) => {
+      this.updateStageStatus(executionId, stageId, 'failed');
+    });
+
     try {
-      const result = await this.engine.execute(pipeline, execution);
-      
-      // 更新执行记录
-      result.status = result.status === 'running' ? 'completed' : result.status;
-      result.endTime = Date.now();
-      result.duration = result.endTime - (result.startTime || result.endTime);
-      
-      await this.executionStore.save(result);
-      this.runningExecutions.delete(execution.id);
+      const result = await engine.execute(pipeline.stages);
+
+      // 更新执行状态
+      const execution = await this.repository.findExecutionById(executionId);
+      if (execution) {
+        execution.status = result.success ? 'completed' : 'failed';
+        execution.endedAt = Date.now();
+        execution.duration = result.totalDuration;
+
+        if (!result.success) {
+          execution.error = `流水线执行失败，失败阶段: ${result.failedStages.join(', ')}`;
+        }
+
+        await this.repository.saveExecution(execution);
+        
+        // 更新统计
+        this.stats.running--;
+        if (result.success) {
+          this.stats.completed++;
+        } else {
+          this.stats.failed++;
+        }
+      }
     } catch (err) {
-      execution.status = 'failed';
-      execution.error = err instanceof Error ? err.message : String(err);
-      execution.endTime = Date.now();
-      execution.duration = execution.endTime - (execution.startTime || execution.endTime);
-      
-      await this.executionStore.save(execution);
-      this.runningExecutions.delete(execution.id);
+      const execution = await this.repository.findExecutionById(executionId);
+      if (execution) {
+        execution.status = 'failed';
+        execution.endedAt = Date.now();
+        execution.error = err instanceof Error ? err.message : '执行错误';
+        await this.repository.saveExecution(execution);
+        
+        this.stats.running--;
+        this.stats.failed++;
+      }
+    } finally {
+      this.engines.delete(executionId);
+    }
+  }
+
+  /**
+   * 更新节点状态
+   */
+  private async updateStageStatus(
+    executionId: string,
+    stageId: string,
+    status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused'
+  ): Promise<void> {
+    const execution = await this.repository.findExecutionById(executionId);
+    if (execution) {
+      if (!execution.stageExecutions) {
+        execution.stageExecutions = {};
+      }
+      execution.stageExecutions[stageId] = status;
+      if (status === 'running' && !execution.startedAt) {
+        execution.startedAt = Date.now();
+      }
+      await this.repository.saveExecution(execution);
     }
   }
 
   /**
    * 获取执行记录
    */
-  async getExecution(id: string): Promise<PipelineExecution | undefined> {
-    return this.executionStore.get(id);
+  async getExecution(id: string): Promise<PipelineExecution | null> {
+    return this.repository.findExecutionById(id);
   }
 
   /**
-   * 获取流水线执行历史
+   * 获取执行历史
    */
-  async getExecutionHistory(pipelineId: string, limit?: number): Promise<PipelineExecution[]> {
-    return this.executionStore.list(pipelineId, limit);
+  async getExecutionHistory(pipelineId: string): Promise<PipelineExecution[]> {
+    return this.repository.findExecutionsByPipelineId(pipelineId);
   }
 
   /**
    * 取消执行
    */
   async cancelExecution(executionId: string): Promise<boolean> {
-    const execution = this.runningExecutions.get(executionId);
-    if (!execution) {
-      return false;
+    const engine = this.engines.get(executionId);
+    if (engine) {
+      // 停止执行
+      this.engines.delete(executionId);
     }
 
-    execution.status = 'cancelled';
-    execution.endTime = Date.now();
-    execution.duration = execution.endTime - (execution.startTime || execution.endTime);
+    const execution = await this.repository.findExecutionById(executionId);
+    if (execution && execution.status === 'running') {
+      execution.status = 'cancelled';
+      execution.endedAt = Date.now();
+      await this.repository.saveExecution(execution);
+      
+      this.stats.running--;
+      return true;
+    }
 
-    await this.executionStore.save(execution);
-    this.runningExecutions.delete(executionId);
-
-    this.emit('pipeline:cancelled', {
-      type: 'pipeline:cancelled',
-      executionId,
-      pipelineId: execution.pipelineId,
-      timestamp: execution.endTime,
-    } as PipelineEvent);
-
-    return true;
+    return false;
   }
 
   /**
-   * 暂停执行
+   * 验证流水线
    */
-  async pauseExecution(executionId: string): Promise<boolean> {
-    const execution = this.runningExecutions.get(executionId);
-    if (!execution) {
-      return false;
+  validate(pipeline: Pipeline): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    // 检查节点 ID 唯一性
+    const stageIds = new Set<string>();
+    for (const stage of pipeline.stages) {
+      if (stageIds.has(stage.id)) {
+        errors.push(`节点 ID 重复: ${stage.id}`);
+      }
+      stageIds.add(stage.id);
+
+      // 检查依赖是否存在
+      if (stage.dependencies) {
+        for (const depId of stage.dependencies) {
+          if (!pipeline.stages.some((s) => s.id === depId)) {
+            errors.push(`节点 ${stage.id} 的依赖 ${depId} 不存在`);
+          }
+        }
+      }
     }
 
-    execution.status = 'paused';
-    await this.executionStore.save(execution);
-
-    this.emit('pipeline:paused', {
-      type: 'pipeline:paused',
-      executionId,
-      pipelineId: execution.pipelineId,
-      timestamp: Date.now(),
-    } as PipelineEvent);
-
-    return true;
-  }
-
-  /**
-   * 恢复执行
-   */
-  async resumeExecution(executionId: string): Promise<boolean> {
-    const execution = await this.executionStore.get(executionId);
-    if (!execution || execution.status !== 'paused') {
-      return false;
-    }
-
-    // 更新状态为运行中
-    execution.status = 'running';
-    await this.executionStore.save(execution);
-    this.runningExecutions.set(executionId, execution);
-
-    // 获取流水线并继续执行
-    const pipeline = await this.store.get(execution.pipelineId);
-    if (pipeline) {
-      this.executePipeline(pipeline, execution).catch((err) => {
-        console.error(`流水线 ${execution.pipelineId} 恢复执行失败:`, err);
-      });
-    }
-
-    return true;
-  }
-
-  /**
-   * 获取流水线统计信息
-   */
-  async getStats(pipelineId: string): Promise<PipelineStats> {
-    const executions = await this.executionStore.list(pipelineId);
-    
-    let successCount = 0;
-    let failedCount = 0;
-    let totalDuration = 0;
-    let lastExecution: number | undefined;
-    let lastStatus: PipelineStatus | undefined;
-
-    for (const exec of executions) {
-      if (exec.status === 'completed') {
-        successCount++;
-      } else if (exec.status === 'failed') {
-        failedCount++;
-      }
-
-      if (exec.duration) {
-        totalDuration += exec.duration;
-      }
-
-      if (!lastExecution || (exec.startTime && exec.startTime > lastExecution)) {
-        lastExecution = exec.startTime;
-        lastStatus = exec.status;
-      }
+    // 检查循环依赖
+    const hasCircular = this.checkCircularDependency(pipeline.stages);
+    if (hasCircular) {
+      errors.push('存在循环依赖');
     }
 
     return {
-      pipelineId,
-      totalExecutions: executions.length,
-      successCount,
-      failedCount,
-      avgDuration: executions.length > 0 ? totalDuration / executions.length : 0,
-      lastExecution,
-      lastStatus,
+      valid: errors.length === 0,
+      errors,
     };
   }
 
   /**
-   * 获取正在运行的执行数
+   * 检查循环依赖
    */
-  getRunningCount(): number {
-    return this.runningExecutions.size;
-  }
-}
+  private checkCircularDependency(stages: PipelineStage[]): boolean {
+    const visited = new Set<string>();
+    const recursionStack = new Set<string>();
 
-/**
- * 内存存储实现（默认）
- */
-class InMemoryPipelineStore implements PipelineStore {
-  private pipelines = new Map<string, PipelineDefinition>();
+    const dfs = (stageId: string): boolean => {
+      visited.add(stageId);
+      recursionStack.add(stageId);
 
-  async save(pipeline: PipelineDefinition): Promise<void> {
-    this.pipelines.set(pipeline.id, { ...pipeline });
-  }
+      const stage = stages.find((s) => s.id === stageId);
+      if (stage?.dependencies) {
+        for (const depId of stage.dependencies) {
+          if (!visited.has(depId)) {
+            if (dfs(depId)) {
+              return true;
+            }
+          } else if (recursionStack.has(depId)) {
+            return true;
+          }
+        }
+      }
 
-  async get(id: string): Promise<PipelineDefinition | undefined> {
-    return this.pipelines.get(id);
-  }
+      recursionStack.delete(stageId);
+      return false;
+    };
 
-  async delete(id: string): Promise<boolean> {
-    return this.pipelines.delete(id);
-  }
-
-  async list(projectKey?: string): Promise<PipelineDefinition[]> {
-    const all = Array.from(this.pipelines.values());
-    if (projectKey) {
-      return all.filter((p) => p.projectKey === projectKey);
+    for (const stage of stages) {
+      if (!visited.has(stage.id)) {
+        if (dfs(stage.id)) {
+          return true;
+        }
+      }
     }
-    return all;
-  }
-}
 
-/**
- * 内存执行记录存储实现（默认）
- */
-class InMemoryExecutionStore implements ExecutionStore {
-  private executions = new Map<string, PipelineExecution>();
-  private byPipeline = new Map<string, string[]>();
-
-  async save(execution: PipelineExecution): Promise<void> {
-    this.executions.set(execution.id, { ...execution });
-
-    // 维护 pipeline 到 execution 的映射
-    const ids = this.byPipeline.get(execution.pipelineId) || [];
-    if (!ids.includes(execution.id)) {
-      ids.push(execution.id);
-      this.byPipeline.set(execution.pipelineId, ids);
-    }
+    return false;
   }
 
-  async get(id: string): Promise<PipelineExecution | undefined> {
-    return this.executions.get(id);
+  /**
+   * 获取统计信息
+   */
+  getStats(): { total: number; running: number; completed: number; failed: number } {
+    return { ...this.stats };
   }
 
-  async list(pipelineId: string, limit?: number): Promise<PipelineExecution[]> {
-    const ids = this.byPipeline.get(pipelineId) || [];
-    const results = ids
-      .map((id) => this.executions.get(id))
-      .filter((e): e is PipelineExecution => e !== undefined)
-      .sort((a, b) => (b.startTime || 0) - (a.startTime || 0));
-
-    return limit ? results.slice(0, limit) : results;
+  /**
+   * 获取执行引擎状态
+   */
+  getEngineStatus(executionId: string): { total: number; completed: number; running: number; failed: number } | null {
+    const engine = this.engines.get(executionId);
+    return engine ? engine.getStatusSummary() : null;
   }
-
-  async getLatest(pipelineId: string): Promise<PipelineExecution | undefined> {
-    const executions = await this.list(pipelineId, 1);
-    return executions[0];
-  }
-}
-
-/**
- * 创建流水线服务
- */
-export function createPipelineService(options?: PipelineServiceOptions): PipelineService {
-  return new PipelineService(options);
 }

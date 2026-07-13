@@ -13,6 +13,7 @@ export type StageStatus =
   | 'completed'  // 已完成
   | 'failed'     // 失败
   | 'skipped'    // 跳过（依赖失败）
+  | 'paused'     // 暂停
   | 'cancelled'; // 取消
 
 /**
@@ -36,9 +37,17 @@ export interface StageExecutionConfig {
  */
 export interface StageOutput {
   /** 输出数据 */
-  data: Record<string, unknown>;
+  data?: Record<string, unknown>;
   /** 输出文件路径列表 */
   artifacts?: string[];
+  /** 标准输出 */
+  stdout?: string;
+  /** 标准错误 */
+  stderr?: string;
+  /** 退出码 */
+  exitCode?: number;
+  /** 消息 */
+  message?: string;
   /** 执行时间（毫秒） */
   duration?: number;
 }
@@ -51,6 +60,8 @@ export interface StageError {
   code: string;
   /** 错误消息 */
   message: string;
+  /** 详细信息 */
+  details?: unknown;
   /** 堆栈信息 */
   stack?: string;
   /** 原始错误 */

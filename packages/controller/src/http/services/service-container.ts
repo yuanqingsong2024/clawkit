@@ -19,7 +19,7 @@ import { WebConsoleService } from './web-console-service';
 import { ControllerConfigService } from './controller-config-service';
 import { RuntimeService } from './runtime-service';
 import { PluginMarketplaceService, createMarketplaceService } from '../../services/plugin-marketplace.service';
-import { PipelineService } from '@clawkit/pipeline';
+import { PipelineService } from '../../services/pipeline-service';
 
 export class ServiceContainer {
   readonly workerRegistry: WorkerRegistry;
@@ -202,6 +202,7 @@ export class ServiceContainer {
 
     // 初始化流水线服务
     this.pipelineService = new PipelineService();
+    console.log('Pipeline 服务已初始化');
   }
 
   /**

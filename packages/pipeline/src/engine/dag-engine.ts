@@ -1,558 +1,467 @@
 /**
  * DAG 执行引擎
- * 实现流水线 DAG 拓扑排序和执行
+ * 负责根据依赖关系调度和执行流水线阶段
  */
 
-import type {
-  PipelineDefinition,
-  PipelineNodeConfig,
-  PipelineExecution,
-  PipelineExecutionContext,
-  PipelineEvent,
-  DAGGraph,
-  DAGNode,
-  NodeOutput,
-  NodeExecutionRequest,
-  NodeExecutionResponse,
-} from '../types/pipeline.types';
+import type { PipelineStage, StageStatus, StageError } from '../models';
+import { EventEmitter } from 'events';
 
-/**
- * DAG 验证结果
- */
-interface DAGValidationResult {
-  valid: boolean;
-  errors: string[];
+export interface StageExecutionContext {
+  stage: PipelineStage;
+  inputs: Map<string, unknown>;
+  outputs: Map<string, unknown>;
+  status: StageStatus;
+  startedAt?: Date;
+  completedAt?: Date;
+  error?: StageError;
 }
 
-/**
- * 节点执行器函数类型
- */
-type NodeExecutorFn = (request: NodeExecutionRequest) => Promise<NodeExecutionResponse>;
+export interface DAGExecutionOptions {
+  /** 最大并发数 */
+  maxConcurrency?: number;
+  /** 阶段执行超时（毫秒） */
+  stageTimeout?: number;
+  /** 是否在失败时继续执行独立阶段 */
+  continueOnFailure?: boolean;
+}
 
-/**
- * 条件解析器函数类型
- */
-type ConditionEvaluatorFn = (condition: string, context: Record<string, unknown>) => boolean;
+export interface StageExecutionResult {
+  success: boolean;
+  output?: { stdout?: string; stderr?: string; exitCode?: number; message?: string; data?: Record<string, unknown>; artifacts?: string[]; duration?: number };
+  error?: StageError;
+  duration?: number;
+}
+
+export interface DAGExecutionResult {
+  success: boolean;
+  executedStages: string[];
+  failedStages: string[];
+  skippedStages: string[];
+  totalDuration?: number;
+  stageResults: Map<string, StageExecutionResult>;
+}
+
+export interface StageExecutor {
+  execute(stage: PipelineStage, context: StageExecutionContext): Promise<StageExecutionResult>;
+}
+
+const DEFAULT_OPTIONS: Required<DAGExecutionOptions> = {
+  maxConcurrency: 4,
+  stageTimeout: 300000, // 5分钟
+  continueOnFailure: false,
+};
 
 /**
  * DAG 执行引擎
+ * 支持拓扑排序、并发执行、失败重试
  */
-export class DAGExecutionEngine {
-  private executorFn?: NodeExecutorFn;
-  private conditionEvaluatorFn?: ConditionEvaluatorFn;
-  private eventListeners: Map<string, Set<(event: PipelineEvent) => void>> = new Map();
+export class DAGEngine extends EventEmitter {
+  private readonly options: Required<DAGExecutionOptions>;
+  private executor?: StageExecutor;
+  private executionContexts = new Map<string, StageExecutionContext>();
+  private runningStages = new Set<string>();
+  private completedStages = new Set<string>();
+  private failedStages = new Set<string>();
+  private skippedStages = new Set<string>();
 
-  /**
-   * 设置节点执行器
-   */
-  setNodeExecutor(fn: NodeExecutorFn): void {
-    this.executorFn = fn;
+  constructor(options: DAGExecutionOptions = {}) {
+    super();
+    this.options = { ...DEFAULT_OPTIONS, ...options };
   }
 
   /**
-   * 设置条件解析器
+   * 设置阶段执行器
    */
-  setConditionEvaluator(fn: ConditionEvaluatorFn): void {
-    this.conditionEvaluatorFn = fn;
-  }
-
-  /**
-   * 添加事件监听器
-   */
-  addEventListener(type: string, listener: (event: PipelineEvent) => void): void {
-    if (!this.eventListeners.has(type)) {
-      this.eventListeners.set(type, new Set());
-    }
-    this.eventListeners.get(type)!.add(listener);
-  }
-
-  /**
-   * 移除事件监听器
-   */
-  removeEventListener(type: string, listener: (event: PipelineEvent) => void): void {
-    this.eventListeners.get(type)?.delete(listener);
-  }
-
-  /**
-   * 发射事件
-   */
-  private emit(event: PipelineEvent): void {
-    this.eventListeners.get(event.type)?.forEach((listener) => listener(event));
-    // 触发通配符监听器
-    this.eventListeners.get('*')?.forEach((listener) => listener(event));
-  }
-
-  /**
-   * 验证 DAG 是否有环
-   */
-  private validateDAG(nodes: PipelineNodeConfig[]): DAGValidationResult {
-    const errors: string[] = [];
-
-    // 检查重复节点 ID
-    const nodeIds = new Set<string>();
-    for (const node of nodes) {
-      if (nodeIds.has(node.id)) {
-        errors.push(`节点 ID 重复: ${node.id}`);
-      }
-      nodeIds.add(node.id);
-    }
-
-    // 检查自循环
-    for (const node of nodes) {
-      if (node.dependsOn?.includes(node.id)) {
-        errors.push(`节点 ${node.id} 依赖于自身`);
-      }
-    }
-
-    // 检查循环依赖（使用 DFS）
-    const visited = new Set<string>();
-    const recursionStack = new Set<string>();
-    const adjacencyList = new Map<string, string[]>();
-
-    // 构建邻接表
-    for (const node of nodes) {
-      adjacencyList.set(node.id, node.dependsOn || []);
-    }
-
-    // DFS 检测环
-    const hasCycle = (nodeId: string): boolean => {
-      visited.add(nodeId);
-      recursionStack.add(nodeId);
-
-      const dependencies = adjacencyList.get(nodeId) || [];
-      for (const dep of dependencies) {
-        if (!visited.has(dep)) {
-          if (hasCycle(dep)) {
-            return true;
-          }
-        } else if (recursionStack.has(dep)) {
-          errors.push(`检测到循环依赖: ${nodeId} -> ${dep}`);
-          return true;
-        }
-      }
-
-      recursionStack.delete(nodeId);
-      return false;
-    };
-
-    for (const node of nodes) {
-      if (!visited.has(node.id)) {
-        hasCycle(node.id);
-      }
-    }
-
-    // 检查缺失的依赖节点
-    for (const node of nodes) {
-      if (node.dependsOn) {
-        for (const dep of node.dependsOn) {
-          if (!nodeIds.has(dep)) {
-            errors.push(`节点 ${node.id} 依赖的节点 ${dep} 不存在`);
-          }
-        }
-      }
-    }
-
-    return {
-      valid: errors.length === 0,
-      errors,
-    };
-  }
-
-  /**
-   * 构建 DAG 图
-   */
-  buildDAGGraph(definition: PipelineDefinition): DAGGraph {
-    const nodes = new Map<string, DAGNode>();
-    const dependents = new Map<string, string[]>();
-
-    // 初始化节点
-    for (const config of definition.nodes) {
-      nodes.set(config.id, {
-        id: config.id,
-        inDegree: 0,
-        outDegree: 0,
-        dependencies: config.dependsOn || [],
-        dependents: [],
-        config,
-      });
-      dependents.set(config.id, []);
-    }
-
-    // 计算入度和出度
-    for (const config of definition.nodes) {
-      const node = nodes.get(config.id)!;
-      node.dependencies = config.dependsOn || [];
-
-      for (const dep of node.dependencies) {
-        const depNode = nodes.get(dep);
-        if (depNode) {
-          depNode.outDegree++;
-          node.inDegree++;
-
-          // 添加后续节点引用
-          const depDependents = dependents.get(dep) || [];
-          depDependents.push(config.id);
-          dependents.set(dep, depDependents);
-        }
-      }
-    }
-
-    // 拓扑排序（Kahn 算法）
-    const topologicalOrder: string[] = [];
-    const queue: string[] = [];
-
-    // 找到所有入度为 0 的节点
-    for (const [nodeId, node] of nodes) {
-      if (node.inDegree === 0) {
-        queue.push(nodeId);
-      }
-    }
-
-    while (queue.length > 0) {
-      const nodeId = queue.shift()!;
-      topologicalOrder.push(nodeId);
-
-      const nodeDependents = dependents.get(nodeId) || [];
-      for (const dependentId of nodeDependents) {
-        const dependentNode = nodes.get(dependentId)!;
-        dependentNode.inDegree--;
-
-        if (dependentNode.inDegree === 0) {
-          queue.push(dependentId);
-        }
-      }
-    }
-
-    // 计算层级（用于并行优化）
-    const levels = new Map<string, number>();
-    for (const nodeId of topologicalOrder) {
-      const node = nodes.get(nodeId)!;
-      let maxDepLevel = 0;
-
-      for (const dep of node.dependencies) {
-        const depLevel = levels.get(dep) || 0;
-        maxDepLevel = Math.max(maxDepLevel, depLevel);
-      }
-
-      levels.set(nodeId, maxDepLevel + 1);
-    }
-
-    return {
-      nodes,
-      topologicalOrder,
-      levels,
-    };
-  }
-
-  /**
-   * 验证流水线定义
-   */
-  validatePipeline(definition: PipelineDefinition): { valid: boolean; errors: string[]; warnings: string[] } {
-    const errors: string[] = [];
-    const warnings: string[] = [];
-
-    // 基本验证
-    if (!definition.id) {
-      errors.push('缺少流水线 ID');
-    }
-    if (!definition.name) {
-      errors.push('缺少流水线名称');
-    }
-    if (!definition.nodes || definition.nodes.length === 0) {
-      errors.push('流水线至少需要一个节点');
-    }
-
-    // DAG 验证
-    const dagResult = this.validateDAG(definition.nodes);
-    errors.push(...dagResult.errors);
-
-    // 检查孤立节点
-    const connectedNodes = new Set<string>();
-    for (const node of definition.nodes) {
-      if (node.dependsOn) {
-        connectedNodes.add(node.id);
-        node.dependsOn.forEach((dep) => connectedNodes.add(dep));
-      }
-    }
-    for (const node of definition.nodes) {
-      if (!connectedNodes.has(node.id) && definition.nodes.length > 1) {
-        warnings.push(`节点 ${node.id} 没有依赖关系，可能是孤立节点`);
-      }
-    }
-
-    // 检查触发器节点
-    const hasTrigger = definition.nodes.some((n) => n.type === 'trigger');
-    if (!hasTrigger) {
-      warnings.push('流水线没有触发器节点，将自动开始执行');
-    }
-
-    return {
-      valid: errors.length === 0,
-      errors,
-      warnings,
-    };
-  }
-
-  /**
-   * 创建执行上下文
-   */
-  createExecutionContext(execution: PipelineExecution): PipelineExecutionContext {
-    return {
-      executionId: execution.id,
-      variables: { ...execution.context?.variables || {} },
-      nodeOutputs: new Map(),
-      history: [],
-    };
-  }
-
-  /**
-   * 获取可执行的节点
-   */
-  private getExecutableNodes(
-    graph: DAGGraph,
-    completedNodes: Set<string>,
-    runningNodes: Set<string>,
-    context: PipelineExecutionContext,
-  ): string[] {
-    const executable: string[] = [];
-
-    for (const [nodeId, node] of graph.nodes) {
-      // 跳过已完成的节点
-      if (completedNodes.has(nodeId)) {
-        continue;
-      }
-
-      // 跳过正在运行的节点
-      if (runningNodes.has(nodeId)) {
-        continue;
-      }
-
-      // 检查所有依赖是否已完成
-      const allDependenciesMet = node.dependencies.every((dep) => completedNodes.has(dep));
-
-      if (allDependenciesMet) {
-        // 如果是条件节点，检查条件
-        if (node.config.type === 'condition' && node.config.condition) {
-          if (this.conditionEvaluatorFn) {
-            const conditionMet = this.conditionEvaluatorFn(
-              node.config.condition,
-              context.variables as Record<string, unknown>,
-            );
-            if (!conditionMet) {
-              completedNodes.add(nodeId); // 条件不满足，跳过
-              continue;
-            }
-          }
-        }
-
-        executable.push(nodeId);
-      }
-    }
-
-    return executable;
-  }
-
-  /**
-   * 执行节点
-   */
-  private async executeNode(
-    nodeId: string,
-    context: PipelineExecutionContext,
-    execution: PipelineExecution,
-  ): Promise<NodeOutput> {
-    const startTime = Date.now();
-
-    this.emit({
-      type: 'pipeline:node:started',
-      executionId: execution.id,
-      pipelineId: execution.pipelineId,
-      nodeId,
-      timestamp: startTime,
-    });
-
-    let result: unknown;
-    let error: string | undefined;
-
-    try {
-      if (this.executorFn) {
-        const response = await this.executorFn({
-          executionId: execution.id,
-          nodeId,
-          config: execution.context ? { id: nodeId } as PipelineNodeConfig : { id: nodeId } as PipelineNodeConfig,
-          context,
-        });
-
-        if (!response.success) {
-          throw new Error(response.error || '节点执行失败');
-        }
-
-        result = response.result;
-      } else {
-        // 默认执行：模拟任务节点
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        result = { message: '节点执行完成', nodeId };
-      }
-
-      context.history.push({
-        nodeId,
-        action: 'completed',
-        timestamp: Date.now(),
-      });
-
-      this.emit({
-        type: 'pipeline:node:completed',
-        executionId: execution.id,
-        pipelineId: execution.pipelineId,
-        nodeId,
-        timestamp: Date.now(),
-        data: result,
-      });
-
-      return {
-        nodeId,
-        result,
-        startTime,
-        endTime: Date.now(),
-        duration: Date.now() - startTime,
-        status: 'completed',
-      };
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-
-      this.emit({
-        type: 'pipeline:node:failed',
-        executionId: execution.id,
-        pipelineId: execution.pipelineId,
-        nodeId,
-        timestamp: Date.now(),
-        data: { error },
-      });
-
-      return {
-        nodeId,
-        error,
-        startTime,
-        endTime: Date.now(),
-        duration: Date.now() - startTime,
-        status: 'failed',
-      };
-    }
+  setExecutor(executor: StageExecutor): void {
+    this.executor = executor;
   }
 
   /**
    * 执行流水线
    */
-  async execute(
-    definition: PipelineDefinition,
-    execution: PipelineExecution,
-  ): Promise<PipelineExecution> {
+  async execute(stages: PipelineStage[]): Promise<DAGExecutionResult> {
+    if (!this.executor) {
+      throw new Error('未设置阶段执行器');
+    }
+
+    // 重置状态
+    this.reset();
     const startTime = Date.now();
 
-    this.emit({
-      type: 'pipeline:started',
-      executionId: execution.id,
-      pipelineId: definition.id,
-      timestamp: startTime,
-    });
-
-    // 验证流水线
-    const validation = this.validatePipeline(definition);
-    if (!validation.valid) {
-      execution.status = 'failed';
-      execution.error = `流水线验证失败: ${validation.errors.join(', ')}`;
-      execution.endTime = Date.now();
-      execution.duration = execution.endTime - startTime;
-      return execution;
+    // 验证依赖
+    const cycleError = this.detectCycle(stages);
+    if (cycleError) {
+      return this.createErrorResult(cycleError, stages, startTime);
     }
 
-    // 构建 DAG
-    const graph = this.buildDAGGraph(definition);
+    // 计算入度
+    const inDegree = this.calculateInDegree(stages);
+    const executableStages = this.getExecutableStages(stages, inDegree);
 
-    // 初始化上下文
-    const context = this.createExecutionContext(execution);
-    context.variables = { ...definition.variables, ...context.variables };
+    this.emit('start', { totalStages: stages.length });
 
-    // 跟踪执行状态
-    const completedNodes = new Set<string>();
-    const runningNodes = new Set<string>();
-    const failedNodes = new Set<string>();
-    const nodeOutputs = new Map<string, NodeOutput>();
+    // 执行流水线
+    await this.executeStages(stages, inDegree, executableStages);
+
+    const totalDuration = Date.now() - startTime;
+
+    return this.createResult(totalDuration);
+  }
+
+  /**
+   * 重置执行状态
+   */
+  private reset(): void {
+    this.executionContexts.clear();
+    this.runningStages.clear();
+    this.completedStages.clear();
+    this.failedStages.clear();
+    this.skippedStages.clear();
+  }
+
+  /**
+   * 检测循环依赖
+   */
+  private detectCycle(stages: PipelineStage[]): string | null {
+    const visited = new Set<string>();
+    const recursionStack = new Set<string>();
+    const stageMap = new Map(stages.map(s => [s.id, s]));
+
+    const dfs = (stageId: string): string | null => {
+      visited.add(stageId);
+      recursionStack.add(stageId);
+
+      const stage = stageMap.get(stageId);
+      if (stage?.dependencies) {
+        for (const depId of stage.dependencies) {
+          if (!visited.has(depId)) {
+            const cycle = dfs(depId);
+            if (cycle) return cycle;
+          } else if (recursionStack.has(depId)) {
+            return `检测到循环依赖: ${stageId} -> ${depId}`;
+          }
+        }
+      }
+
+      recursionStack.delete(stageId);
+      return null;
+    };
+
+    for (const stage of stages) {
+      if (!visited.has(stage.id)) {
+        const cycle = dfs(stage.id);
+        if (cycle) return cycle;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 计算入度
+   */
+  private calculateInDegree(stages: PipelineStage[]): Map<string, number> {
+    const inDegree = new Map<string, number>();
+    const stageMap = new Map(stages.map(s => [s.id, s]));
+
+    // 初始化入度
+    for (const stage of stages) {
+      inDegree.set(stage.id, 0);
+    }
+
+    // 统计每个节点的依赖数
+    for (const stage of stages) {
+      if (stage.dependencies) {
+        for (const depId of stage.dependencies) {
+          if (stageMap.has(depId)) {
+            inDegree.set(stage.id, (inDegree.get(stage.id) || 0) + 1);
+          }
+        }
+      }
+    }
+
+    return inDegree;
+  }
+
+  /**
+   * 获取可执行的阶段
+   */
+  private getExecutableStages(
+    _stages: PipelineStage[],
+    inDegree: Map<string, number>
+  ): Set<string> {
+    const executable = new Set<string>();
+    for (const [stageId, degree] of inDegree) {
+      if (degree === 0 && !this.completedStages.has(stageId) && !this.runningStages.has(stageId)) {
+        executable.add(stageId);
+      }
+    }
+    return executable;
+  }
+
+  /**
+   * 执行阶段
+   */
+  private async executeStages(
+    stages: PipelineStage[],
+    inDegree: Map<string, number>,
+    initialExecutable: Set<string>
+  ): Promise<void> {
+    const stageMap = new Map(stages.map(s => [s.id, s]));
+    const pendingQueue = [...initialExecutable];
+    const executing: Promise<void>[] = [];
+
+    while (pendingQueue.length > 0 || executing.length > 0) {
+      // 填充执行槽
+      while (pendingQueue.length > 0 && executing.length < this.options.maxConcurrency) {
+        const stageId = pendingQueue.shift()!;
+        executing.push(this.executeStage(stageId, stageMap, inDegree, pendingQueue));
+      }
+
+      if (executing.length > 0) {
+        await Promise.race(executing);
+        // 移除已完成的 promise
+        for (let i = executing.length - 1; i >= 0; i--) {
+          const promise = executing[i];
+          const done = await Promise.race([
+            promise.then(() => true),
+            Promise.resolve(false),
+          ]);
+          if (done) {
+            executing.splice(i, 1);
+          }
+        }
+      }
+
+      // 检查是否需要停止
+      if (this.failedStages.size > 0 && !this.options.continueOnFailure) {
+        // 标记未完成的阶段为跳过
+        for (const stage of stages) {
+          if (!this.completedStages.has(stage.id) && !this.failedStages.has(stage.id)) {
+            this.markSkipped(stage.id);
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  /**
+   * 执行单个阶段
+   */
+  private async executeStage(
+    stageId: string,
+    stageMap: Map<string, PipelineStage>,
+    inDegree: Map<string, number>,
+    pendingQueue: string[]
+  ): Promise<void> {
+    const stage = stageMap.get(stageId);
+    if (!stage) return;
+
+    this.runningStages.add(stageId);
+    this.emit('stageStart', { stageId, stageName: stage.name });
+
+    const context: StageExecutionContext = {
+      stage,
+      inputs: this.collectInputs(stage, stageMap),
+      outputs: new Map(),
+      status: 'running',
+      startedAt: new Date(),
+    };
+
+    this.executionContexts.set(stageId, context);
 
     try {
-      // 执行直到所有节点完成或失败
-      while (completedNodes.size < definition.nodes.length) {
-        // 获取可执行的节点
-        const executableNodes = this.getExecutableNodes(graph, completedNodes, runningNodes, context);
+      // 执行阶段
+      const result = await this.executeWithTimeout(stage, context);
 
-        if (executableNodes.length === 0) {
-          // 没有可执行的节点，但还有未完成的节点，检查是否有失败
-          if (failedNodes.size > 0) {
-            break; // 有失败节点，停止执行
-          }
-          break; // 理论上不应该到这里
-        }
-
-        // 并行执行可执行的节点（同一层级的）
-        const promises = executableNodes.map(async (nodeId) => {
-          runningNodes.add(nodeId);
-
-          const output = await this.executeNode(nodeId, context, execution);
-
-          runningNodes.delete(nodeId);
-          nodeOutputs.set(nodeId, output);
-
-          if (output.status === 'failed') {
-            failedNodes.add(nodeId);
-            completedNodes.add(nodeId);
-          } else {
-            completedNodes.add(nodeId);
-            context.nodeOutputs.set(nodeId, output.result);
-          }
-        });
-
-        await Promise.all(promises);
-      }
-
-      // 确定最终状态
-      if (failedNodes.size > 0) {
-        execution.status = 'failed';
-        execution.error = `${failedNodes.size} 个节点执行失败`;
+      if (result.success) {
+        this.markCompleted(stageId, result);
       } else {
-        execution.status = 'completed';
+        this.markFailed(stageId, result);
       }
-    } catch (err) {
-      execution.status = 'failed';
-      execution.error = err instanceof Error ? err.message : String(err);
-    }
-
-    execution.nodeResults = nodeOutputs;
-    execution.endTime = Date.now();
-    execution.duration = execution.endTime - startTime;
-
-    if (execution.status === 'completed') {
-      this.emit({
-        type: 'pipeline:completed',
-        executionId: execution.id,
-        pipelineId: definition.id,
-        timestamp: execution.endTime,
+    } catch (error) {
+      this.markFailed(stageId, {
+        success: false,
+        error: {
+          code: 'EXECUTION_ERROR',
+          message: error instanceof Error ? error.message : '阶段执行失败',
+        },
       });
-    } else {
-      this.emit({
-        type: 'pipeline:failed',
-        executionId: execution.id,
-        pipelineId: definition.id,
-        timestamp: execution.endTime,
-        data: { error: execution.error },
-      });
+    } finally {
+      this.runningStages.delete(stageId);
+      this.updatePendingQueue(stageId, stageMap, inDegree, pendingQueue);
     }
-
-    return execution;
   }
-}
 
-/**
- * 创建 DAG 执行引擎
- */
-export function createDAGExecutionEngine(): DAGExecutionEngine {
-  return new DAGExecutionEngine();
+  /**
+   * 超时控制执行
+   */
+  private async executeWithTimeout(
+    stage: PipelineStage,
+    context: StageExecutionContext
+  ): Promise<StageExecutionResult> {
+    return Promise.race([
+      this.executor!.execute(stage, context),
+      new Promise<StageExecutionResult>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`阶段 ${stage.name} 执行超时`)),
+          this.options.stageTimeout
+        )
+      ),
+    ]);
+  }
+
+  /**
+   * 收集输入数据
+   */
+  private collectInputs(
+    stage: PipelineStage,
+    _stageMap: Map<string, PipelineStage>
+  ): Map<string, unknown> {
+    const inputs = new Map<string, unknown>();
+
+    if (stage.dependencies) {
+      for (const depId of stage.dependencies) {
+        const depContext = this.executionContexts.get(depId);
+        if (depContext) {
+          inputs.set(depId, depContext.outputs);
+        }
+      }
+    }
+
+    return inputs;
+  }
+
+  /**
+   * 更新待执行队列
+   */
+  private updatePendingQueue(
+    completedStageId: string,
+    stageMap: Map<string, PipelineStage>,
+    inDegree: Map<string, number>,
+    pendingQueue: string[]
+  ): void {
+    for (const [stageId, degree] of inDegree) {
+      if (degree > 0 && !this.completedStages.has(stageId) && !this.runningStages.has(stageId)) {
+        // 减少入度
+        const stage = stageMap.get(stageId);
+        if (stage?.dependencies?.includes(completedStageId)) {
+          inDegree.set(stageId, degree - 1);
+          if (inDegree.get(stageId) === 0) {
+            pendingQueue.push(stageId);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * 标记阶段完成
+   */
+  private markCompleted(stageId: string, result: StageExecutionResult): void {
+    const context = this.executionContexts.get(stageId);
+    if (context) {
+      context.status = 'completed';
+      context.completedAt = new Date();
+      context.outputs.set('result', result.output);
+    }
+    this.completedStages.add(stageId);
+    this.emit('stageComplete', { stageId, result });
+  }
+
+  /**
+   * 标记阶段失败
+   */
+  private markFailed(stageId: string, result: StageExecutionResult): void {
+    const context = this.executionContexts.get(stageId);
+    if (context) {
+      context.status = 'failed';
+      context.completedAt = new Date();
+      context.error = result.error;
+    }
+    this.failedStages.add(stageId);
+    this.emit('stageFailed', { stageId, error: result.error });
+  }
+
+  /**
+   * 标记阶段跳过
+   */
+  private markSkipped(stageId: string): void {
+    const context = this.executionContexts.get(stageId);
+    if (context) {
+      context.status = 'skipped';
+    }
+    this.skippedStages.add(stageId);
+  }
+
+  /**
+   * 创建错误结果
+   */
+  private createErrorResult(
+    _errorMessage: string,
+    stages: PipelineStage[],
+    _startTime: number
+  ): DAGExecutionResult {
+    return {
+      success: false,
+      executedStages: [],
+      failedStages: [],
+      skippedStages: stages.map(s => s.id),
+      totalDuration: 0,
+      stageResults: new Map(),
+    };
+  }
+
+  /**
+   * 创建执行结果
+   */
+  private createResult(totalDuration: number): DAGExecutionResult {
+    const stageResults = new Map<string, StageExecutionResult>();
+
+    for (const [stageId, context] of this.executionContexts) {
+      const outputData = context.outputs.get('result') as { data?: Record<string, unknown>; artifacts?: string[]; duration?: number } | undefined;
+      stageResults.set(stageId, {
+        success: context.status === 'completed',
+        output: outputData,
+        error: context.error,
+        duration: context.completedAt && context.startedAt
+          ? context.completedAt.getTime() - context.startedAt.getTime()
+          : undefined,
+      });
+    }
+
+    return {
+      success: this.failedStages.size === 0,
+      executedStages: [...this.completedStages, ...this.failedStages],
+      failedStages: [...this.failedStages],
+      skippedStages: [...this.skippedStages],
+      totalDuration,
+      stageResults,
+    };
+  }
+
+  /**
+   * 获取执行上下文
+   */
+  getContext(stageId: string): StageExecutionContext | undefined {
+    return this.executionContexts.get(stageId);
+  }
+
+  /**
+   * 获取执行状态摘要
+   */
+  getStatusSummary(): {
+    total: number;
+    completed: number;
+    running: number;
+    failed: number;
+  } {
+    return {
+      total: this.executionContexts.size,
+      completed: this.completedStages.size,
+      running: this.runningStages.size,
+      failed: this.failedStages.size,
+    };
+  }
 }

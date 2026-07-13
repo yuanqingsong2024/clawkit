@@ -1,275 +1,344 @@
 /**
- * 流水线 API 路由
- * 提供流水线的 CRUD 和执行 API
+ * Pipeline API 路由
+ * 提供流水线管理的 REST API 接口
  */
 
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import type { PipelineService } from '@clawkit/pipeline';
-import type { PipelineDefinition, PipelineExecution } from '@clawkit/pipeline';
+import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import type { PipelineService } from '../../services/pipeline-service';
+import { sendSuccess, sendFailure } from '../types/api-response';
+import type { PipelineStage } from '@clawkit/pipeline';
 
-export function createPipelineRoutes(pipelineService: PipelineService) {
-  return async function (app: FastifyInstance): Promise<void> {
-
-    // ========== 流水线管理 ==========
-
+/**
+ * 创建 Pipeline 路由
+ */
+export function createPipelineRoutes(
+  pipelineService: PipelineService,
+): FastifyPluginAsync {
+  return async (app: FastifyInstance): Promise<void> => {
     /**
-     * 获取所有流水线
+     * 列出所有流水线
+     * GET /api/pipelines
      */
-    app.get('/', async (_req: FastifyRequest, reply: FastifyReply) => {
+    app.get('/', async (_request, reply) => {
       try {
         const pipelines = await pipelineService.list();
-        return reply.send({
-          success: true,
+        sendSuccess(reply, {
+          code: 'pipelines.list.fetched',
+          message: '流水线列表获取成功',
           data: pipelines,
         });
       } catch (error) {
-        return reply.status(500).send({
-          success: false,
-          error: error instanceof Error ? error.message : '获取流水线列表失败',
+        sendFailure(reply, {
+          code: 'pipelines.list.error',
+          message: '获取流水线列表失败',
+          details: error instanceof Error ? error.message : String(error),
         });
       }
     });
 
     /**
-     * 获取单个流水线
+     * 获取流水线详情
+     * GET /api/pipelines/:id
      */
-    app.get('/:id', async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
       try {
-        const pipeline = await pipelineService.get(req.params.id);
+        const pipeline = await pipelineService.get(request.params.id);
         if (!pipeline) {
-          return reply.status(404).send({
-            success: false,
-            error: `流水线不存在: ${req.params.id}`,
+          sendFailure(reply, {
+            code: 'pipelines.not.found',
+            message: '流水线不存在',
+            statusCode: 404,
+            details: null,
           });
+          return;
         }
-        return reply.send({
-          success: true,
+        sendSuccess(reply, {
+          code: 'pipelines.get.fetched',
+          message: '流水线详情获取成功',
           data: pipeline,
         });
       } catch (error) {
-        return reply.status(500).send({
-          success: false,
-          error: error instanceof Error ? error.message : '获取流水线失败',
+        sendFailure(reply, {
+          code: 'pipelines.get.error',
+          message: '获取流水线详情失败',
+          details: error instanceof Error ? error.message : String(error),
         });
       }
     });
 
     /**
      * 创建流水线
+     * POST /api/pipelines
      */
-    app.post('/', async (req: FastifyRequest<{
+    app.post<{
       Body: {
-        name?: string;
+        name: string;
+        stages?: PipelineStage[];
         description?: string;
-        nodes?: PipelineDefinition['nodes'];
-        variables?: Record<string, unknown>;
       };
-    }>, reply: FastifyReply) => {
+    }>('/', async (request, reply) => {
       try {
-        const { name, description, nodes, variables } = req.body || {};
-        
-        if (!name || !nodes) {
-          return reply.status(400).send({
-            success: false,
-            error: '缺少必填参数: name, nodes',
+        const { name, stages, description } = request.body;
+        if (!name) {
+          sendFailure(reply, {
+            code: 'pipelines.create.validation',
+            message: '流水线名称不能为空',
+            statusCode: 400,
+            details: null,
           });
+          return;
         }
-
-        const pipeline = await pipelineService.create({
-          name,
-          description,
-          nodes,
-          version: '1.0.0',
-          projectKey: 'default',
-          executionMode: 'dag',
-          variables,
-        });
-
-        return reply.status(201).send({
-          success: true,
+        const pipeline = await pipelineService.create(name, stages || [], { description });
+        sendSuccess(reply, {
+          code: 'pipelines.create.created',
+          message: '流水线创建成功',
           data: pipeline,
         });
+        reply.status(201);
       } catch (error) {
-        return reply.status(400).send({
-          success: false,
-          error: error instanceof Error ? error.message : '创建流水线失败',
+        sendFailure(reply, {
+          code: 'pipelines.create.error',
+          message: '创建流水线失败',
+          details: error instanceof Error ? error.message : String(error),
         });
       }
     });
 
     /**
      * 更新流水线
+     * PUT /api/pipelines/:id
      */
-    app.put('/:id', async (req: FastifyRequest<{
+    app.put<{
       Params: { id: string };
-      Body: Partial<PipelineDefinition>;
-    }>, reply: FastifyReply) => {
+      Body: Partial<{
+        name: string;
+        stages: PipelineStage[];
+        description: string;
+      }>;
+    }>('/:id', async (request, reply) => {
       try {
-        const pipeline = await pipelineService.update(req.params.id, req.body);
-        return reply.send({
-          success: true,
+        const { id } = request.params;
+        const pipeline = await pipelineService.update(id, request.body);
+        if (!pipeline) {
+          sendFailure(reply, {
+            code: 'pipelines.not.found',
+            message: '流水线不存在',
+            statusCode: 404,
+            details: null,
+          });
+          return;
+        }
+        sendSuccess(reply, {
+          code: 'pipelines.update.updated',
+          message: '流水线更新成功',
           data: pipeline,
         });
       } catch (error) {
-        return reply.status(400).send({
-          success: false,
-          error: error instanceof Error ? error.message : '更新流水线失败',
+        sendFailure(reply, {
+          code: 'pipelines.update.error',
+          message: '更新流水线失败',
+          details: error instanceof Error ? error.message : String(error),
         });
       }
     });
 
     /**
      * 删除流水线
+     * DELETE /api/pipelines/:id
      */
-    app.delete('/:id', async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    app.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
       try {
-        const deleted = await pipelineService.delete(req.params.id);
+        const { id } = request.params;
+        const deleted = await pipelineService.delete(id);
         if (!deleted) {
-          return reply.status(404).send({
-            success: false,
-            error: `流水线不存在: ${req.params.id}`,
+          sendFailure(reply, {
+            code: 'pipelines.not.found',
+            message: '流水线不存在',
+            statusCode: 404,
+            details: null,
           });
+          return;
         }
-        return reply.send({
-          success: true,
-          message: '流水线已删除',
+        sendSuccess(reply, {
+          code: 'pipelines.delete.deleted',
+          message: '流水线删除成功',
+          data: { id },
         });
       } catch (error) {
-        return reply.status(500).send({
-          success: false,
-          error: error instanceof Error ? error.message : '删除流水线失败',
+        sendFailure(reply, {
+          code: 'pipelines.delete.error',
+          message: '删除流水线失败',
+          details: error instanceof Error ? error.message : String(error),
         });
       }
     });
 
     /**
      * 验证流水线
+     * POST /api/pipelines/:id/validate
      */
-    app.post('/validate', async (req: FastifyRequest<{ Body: PipelineDefinition }>, reply: FastifyReply) => {
+    app.post<{ Params: { id: string } }>('/:id/validate', async (request, reply) => {
       try {
-        const validation = pipelineService.validate(req.body);
-        return reply.send({
-          success: true,
-          data: validation,
+        const { id } = request.params;
+        const pipeline = await pipelineService.get(id);
+        if (!pipeline) {
+          sendFailure(reply, {
+            code: 'pipelines.not.found',
+            message: '流水线不存在',
+            statusCode: 404,
+            details: null,
+          });
+          return;
+        }
+        const result = pipelineService.validate(pipeline);
+        sendSuccess(reply, {
+          code: 'pipelines.validate.validated',
+          message: result.valid ? '流水线配置有效' : '流水线配置无效',
+          data: result,
         });
       } catch (error) {
-        return reply.status(400).send({
-          success: false,
-          error: error instanceof Error ? error.message : '验证流水线失败',
+        sendFailure(reply, {
+          code: 'pipelines.validate.error',
+          message: '验证流水线失败',
+          details: error instanceof Error ? error.message : String(error),
         });
       }
     });
-
-    // ========== 流水线执行 ==========
 
     /**
      * 执行流水线
+     * POST /api/pipelines/:id/execute
      */
-    app.post('/:id/execute', async (req: FastifyRequest<{
+    app.post<{
       Params: { id: string };
-      Body: { trigger?: PipelineExecution['trigger']; variables?: Record<string, unknown> };
-    }>, reply: FastifyReply) => {
+      Body: { triggerType?: string };
+    }>('/:id/execute', async (request, reply) => {
       try {
-        const { trigger, variables } = req.body || {};
-        const execution = await pipelineService.execute(req.params.id, trigger, variables);
-        return reply.status(201).send({
-          success: true,
+        const { id } = request.params;
+        const { triggerType } = request.body || {};
+        const execution = await pipelineService.execute(id, triggerType);
+        sendSuccess(reply, {
+          code: 'pipelines.execute.started',
+          message: '流水线执行已启动',
           data: execution,
         });
+        reply.status(202);
       } catch (error) {
-        return reply.status(400).send({
-          success: false,
-          error: error instanceof Error ? error.message : '执行流水线失败',
+        sendFailure(reply, {
+          code: 'pipelines.execute.error',
+          message: '执行流水线失败',
+          details: error instanceof Error ? error.message : String(error),
         });
       }
     });
 
     /**
-     * 取消执行
+     * 获取执行历史
+     * GET /api/pipelines/:id/executions
      */
-    app.post('/:pipelineId/cancel/:executionId', async (req: FastifyRequest<{
-      Params: { pipelineId: string; executionId: string };
-    }>, reply: FastifyReply) => {
+    app.get<{ Params: { id: string } }>('/:id/executions', async (request, reply) => {
       try {
-        const cancelled = await pipelineService.cancelExecution(req.params.executionId);
-        if (!cancelled) {
-          return reply.status(404).send({
-            success: false,
-            error: `执行不存在或无法取消: ${req.params.executionId}`,
-          });
-        }
-        return reply.send({
-          success: true,
-          message: '执行已取消',
-        });
-      } catch (error) {
-        return reply.status(500).send({
-          success: false,
-          error: error instanceof Error ? error.message : '取消执行失败',
-        });
-      }
-    });
-
-    /**
-     * 获取执行记录
-     */
-    app.get('/:pipelineId/executions', async (req: FastifyRequest<{ Params: { pipelineId: string } }>, reply: FastifyReply) => {
-      try {
-        const executions = await pipelineService.getExecutionHistory(req.params.pipelineId);
-        return reply.send({
-          success: true,
+        const { id } = request.params;
+        const executions = await pipelineService.getExecutionHistory(id);
+        sendSuccess(reply, {
+          code: 'pipelines.executions.fetched',
+          message: '执行历史获取成功',
           data: executions,
         });
       } catch (error) {
-        return reply.status(500).send({
-          success: false,
-          error: error instanceof Error ? error.message : '获取执行历史失败',
+        sendFailure(reply, {
+          code: 'pipelines.executions.error',
+          message: '获取执行历史失败',
+          details: error instanceof Error ? error.message : String(error),
         });
       }
     });
 
     /**
      * 获取执行详情
+     * GET /api/pipelines/executions/:executionId
      */
-    app.get('/:pipelineId/executions/:executionId', async (req: FastifyRequest<{
-      Params: { pipelineId: string; executionId: string };
-    }>, reply: FastifyReply) => {
-      try {
-        const execution = await pipelineService.getExecution(req.params.executionId);
-        if (!execution) {
-          return reply.status(404).send({
-            success: false,
-            error: `执行不存在: ${req.params.executionId}`,
+    app.get<{ Params: { executionId: string } }>(
+      '/executions/:executionId',
+      async (request, reply) => {
+        try {
+          const { executionId } = request.params;
+          const execution = await pipelineService.getExecution(executionId);
+          if (!execution) {
+            sendFailure(reply, {
+              code: 'pipelines.executions.not.found',
+              message: '执行记录不存在',
+              statusCode: 404,
+              details: null,
+            });
+            return;
+          }
+          sendSuccess(reply, {
+            code: 'pipelines.executions.get',
+            message: '执行详情获取成功',
+            data: execution,
+          });
+        } catch (error) {
+          sendFailure(reply, {
+            code: 'pipelines.executions.error',
+            message: '获取执行详情失败',
+            details: error instanceof Error ? error.message : String(error),
           });
         }
-        return reply.send({
-          success: true,
-          data: execution,
-        });
-      } catch (error) {
-        return reply.status(500).send({
-          success: false,
-          error: error instanceof Error ? error.message : '获取执行详情失败',
-        });
       }
-    });
+    );
 
-    // ========== 统计 ==========
+    /**
+     * 取消执行
+     * POST /api/pipelines/executions/:executionId/cancel
+     */
+    app.post<{ Params: { executionId: string } }>(
+      '/executions/:executionId/cancel',
+      async (request, reply) => {
+        try {
+          const { executionId } = request.params;
+          const cancelled = await pipelineService.cancelExecution(executionId);
+          if (!cancelled) {
+            sendFailure(reply, {
+              code: 'pipelines.executions.not.found',
+              message: '执行记录不存在或未在运行',
+              statusCode: 404,
+              details: null,
+            });
+            return;
+          }
+          sendSuccess(reply, {
+            code: 'pipelines.executions.cancelled',
+            message: '执行已取消',
+            data: { executionId },
+          });
+        } catch (error) {
+          sendFailure(reply, {
+            code: 'pipelines.executions.cancel.error',
+            message: '取消执行失败',
+            details: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    );
 
     /**
      * 获取统计信息
+     * GET /api/pipelines/stats
      */
-    app.get('/:pipelineId/stats', async (req: FastifyRequest<{ Params: { pipelineId: string } }>, reply: FastifyReply) => {
+    app.get('/stats', async (_request, reply) => {
       try {
-        const stats = await pipelineService.getStats(req.params.pipelineId);
-        return reply.send({
-          success: true,
+        const stats = pipelineService.getStats();
+        sendSuccess(reply, {
+          code: 'pipelines.stats.fetched',
+          message: '统计信息获取成功',
           data: stats,
         });
       } catch (error) {
-        return reply.status(500).send({
-          success: false,
-          error: error instanceof Error ? error.message : '获取统计信息失败',
+        sendFailure(reply, {
+          code: 'pipelines.stats.error',
+          message: '获取统计信息失败',
+          details: error instanceof Error ? error.message : String(error),
         });
       }
     });
