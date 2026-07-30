@@ -9,6 +9,7 @@ import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { ErrorNotice, InfoNotice, WarningNotice } from '../components/ui/Notice';
 import { primaryButtonClassName, secondaryButtonClassName } from '../components/ui/styles';
+import { StatusCards, WorkersList, RecentTasks, DashboardSkeleton } from '../components/dashboard';
 import { formatDateTime, isNonEmptyString } from '../lib/format';
 import { apiGet, apiPost } from '../lib/api';
 import { checkOpenCodeStatus as checkDesktopOpenCodeStatus } from '../lib/desktop';
@@ -795,6 +796,10 @@ export function DashboardPage(): JSX.Element {
         )
       ) : null}
 
+      {/* 加载骨架屏 */}
+      {overviewQuery.isLoading ? <DashboardSkeleton /> : null}
+
+      {/* 数据加载完成后显示内容 */}
       {data ? (
         <div className="space-y-4">
           {/* manifest 路径提示 */}
@@ -833,255 +838,30 @@ export function DashboardPage(): JSX.Element {
             </div>
           ) : null}
 
-          {/* 服务状态卡片（紧凑概览） */}
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-4">
-            {/* Controller */}
-            <Card compact title="Controller" className="h-full">
-              <div className="flex h-full flex-col space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs text-slate-600">调度中心</div>
-                    <div className="mt-1 text-sm font-medium text-slate-900">任务派发与状态聚合</div>
-                  </div>
-                  <Badge tone={toneForSystemStatus(data.controller.status)} className="shrink-0 text-sm">
-                    {data.controller.status}
-                  </Badge>
-                </div>
-                {isNonEmptyString(data.controller.publicUrl) ? (
-                  <div className="mt-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 break-all leading-5">
-                    {data.controller.publicUrl}
-                  </div>
-                ) : null}
-              </div>
-            </Card>
-
-            {/* Workers */}
-            <Card compact title="Workers" className="h-full">
-              <div className="flex h-full flex-col space-y-3">
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <div className="text-xs text-slate-600">执行节点</div>
-                    <div className="mt-1 text-sm font-medium text-slate-900">在线 / 总数</div>
-                  </div>
-                  <div className="text-2xl font-semibold tabular-nums text-slate-900">{data.workers.online}/{data.workers.total}</div>
-                </div>
-                <div className="mt-auto grid grid-cols-3 gap-2">
-                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-2 text-center">
-                    <div className="text-[11px] text-emerald-700">空闲</div>
-                    <div className="mt-0.5 text-sm font-semibold text-emerald-900">{data.workers.idle}</div>
-                  </div>
-                  <div className="rounded-lg border border-sky-100 bg-sky-50 px-2.5 py-2 text-center">
-                    <div className="text-[11px] text-sky-700">忙碌</div>
-                    <div className="mt-0.5 text-sm font-semibold text-sky-900">{data.workers.busy}</div>
-                  </div>
-                  <div className="rounded-lg border border-rose-100 bg-rose-50 px-2.5 py-2 text-center">
-                    <div className="text-[11px] text-rose-700">离线</div>
-                    <div className="mt-0.5 text-sm font-semibold text-rose-900">{data.workers.offline}</div>
-                  </div>
-                </div>
-                {data.workers.offline > 0 ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 leading-5">
-                    检测到离线 Worker，可在下方列表中直接点击“一键启动”。
-                  </div>
-                ) : null}
-              </div>
-            </Card>
-
-            {/* OpenClaw */}
-            <Card compact title="OpenClaw" className="h-full">
-              <div className="flex h-full flex-col space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs text-slate-600">Webhook 接入</div>
-                    <div className="mt-1 text-sm font-medium text-slate-900">OpenClaw 通道状态</div>
-                  </div>
-                  <Badge tone={toneForServiceStatus(data.openClaw.serviceStatus)} className="shrink-0 text-sm">
-                    {labelForServiceStatus(data.openClaw.serviceStatus)}
-                  </Badge>
-                </div>
-                <div className="mt-auto grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-600">
-                    <div className="text-[11px] text-slate-500">配置</div>
-                    <div className="mt-0.5 font-medium text-slate-800">{data.openClaw.configured ? '已配置' : '未配置'}</div>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-600">
-                    <div className="text-[11px] text-slate-500">Token</div>
-                    <div className="mt-0.5 font-medium text-slate-800">{data.openClaw.tokenConfigured ? '已设置' : '未设置'}</div>
-                  </div>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 leading-5">
-                  {data.openClaw.localDetected
-                    ? '已识别到本机 OpenClaw 服务，即使 manifest 尚未配置也会显示在线状态。'
-                    : data.openClaw.healthCheckDetail}
-                </div>
-                {data.openClaw.serviceStatus !== 'online' && data.openClaw.canStart ? (
-                  <button
-                    type="button"
-                    disabled={openClawStarting || startOpenClawMutation.isPending}
-                    onClick={() => startOpenClawMutation.mutate()}
-                    className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {openClawStarting ? '启动中…' : '一键启动 OpenClaw'}
-                  </button>
-                ) : null}
-              </div>
-            </Card>
-
-            {/* OpenCode */}
-            <Card compact title="OpenCode 总览" className="h-full">
-              <div className={`flex h-full flex-col ${showOpenCodeDetails ? 'space-y-2' : 'space-y-3'}`}>
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs text-slate-600">代码执行服务实例</div>
-                    <div className="mt-1 text-sm font-medium text-slate-900">
-                      {showOpenCodeDetails ? '明细已展开，继续向下查看' : '运行中的 OpenCode 节点'}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-2xl font-semibold tabular-nums text-slate-900">
-                      {openCodeOnlineCount}/{openCodeInstanceCount}
-                    </div>
-                    {openCodeHasInstances ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowOpenCodeDetails((value) => !value)}
-                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100"
-                      >
-                        {showOpenCodeDetails ? '收起总览' : '查看明细'}
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-
-                {!showOpenCodeDetails && openCodeHasInstances ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-600">
-                        <div className="text-[11px] text-slate-500">实例</div>
-                        <div className="mt-0.5 font-medium text-slate-800">{openCodeInstanceCount} 个</div>
-                      </div>
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-600">
-                        <div className="text-[11px] text-slate-500">项目</div>
-                        <div className="mt-0.5 font-medium text-slate-800">{openCodeProjectCount} 个</div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={openCodeOnlineCount > 0 ? 'success' : 'failed'} className="text-xs">
-                        {openCodeInstanceCount > 0 ? `${openCodeOnlineCount} 在线 / ${openCodeInstanceCount} 实例` : '无实例'}
-                      </Badge>
-                      <span className="text-xs text-slate-500">
-                        {desktopMode
-                          ? '点击“查看明细”展开每个项目对应的节点，同端口关联项目会合并显示。'
-                          : '点击“查看明细”展开每个项目对应的节点。'}
-                      </span>
-                    </div>
-                  </>
-                ) : null}
-
-                {showOpenCodeDetails && openCodeHasInstances ? (
-                  <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 leading-5">
-                    已折叠总览，只保留状态摘要。明细区已自动定位到页面下方，可直接查看每个实例的运行状态和启动操作。
-                  </div>
-                ) : null}
-
-                {!showOpenCodeDetails && openCodeHasInstances ? (
-                  <div className="mt-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 leading-5">
-                    {openCodeOnlineCount > 0
-                      ? desktopMode
-                        ? '默认只展示总览。点击“查看明细”可展开每个项目对应的 OpenCode 节点，同端口的关联项目会合并显示。'
-                        : '默认只展示总览。点击“查看明细”可展开每个项目对应的 OpenCode 节点。'
-                      : desktopMode
-                        ? '所有 OpenCode 节点都处于离线状态。请先确认 OPENCODE_SERVER_PASSWORD 已配置，再使用明细里的启动按钮。'
-                        : '所有 OpenCode 节点都处于离线状态。请先在对应项目目录启动 OpenCode，再刷新此页面。'}
-                  </div>
-                ) : null}
-              </div>
-            </Card>
-          </div>
+          {/* 服务状态卡片（使用 StatusCards 组件） */}
+          <StatusCards
+            data={data}
+            desktopMode={desktopMode}
+            openClawStarting={openClawStarting}
+            onStartClaudeCode={() => void startProjectManager()}
+            showOpenCodeDetails={showOpenCodeDetails}
+            onToggleOpenCodeDetails={() => setShowOpenCodeDetails((value) => !value)}
+            openCodeOnlineCount={openCodeOnlineCount}
+            openCodeInstanceCount={openCodeInstanceCount}
+            openCodeHasInstances={openCodeHasInstances}
+            openCodeProjectCount={openCodeProjectCount}
+          />
 
           {/* Workers 详细列表 */}
           {data.workers.items.length > 0 ? (
-            <Card compact title="Workers 列表">
-              <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 leading-5">
-                这里展示 Worker 在线状态、最近心跳和当前任务。
-              </div>
-              <div className="overflow-auto">
-                <table className="min-w-full table-fixed text-left text-sm leading-5">
-                  <thead className="text-[11px] uppercase tracking-wide text-slate-500">
-                    <tr className="border-b border-slate-100">
-                      <th className="w-40 py-1.5 pr-3 font-medium">ID</th>
-                      <th className="w-32 py-1.5 pr-3 font-medium">名称</th>
-                      <th className="w-22 py-1.5 pr-3 font-medium">状态</th>
-                      <th className="w-36 py-1.5 pr-3 font-medium">最后心跳</th>
-                      <th className="py-1.5 font-medium">当前任务</th>
-                      <th className="w-32 py-1.5 font-medium">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {data.workers.items.map((worker) => (
-                      <tr key={worker.workerId}>
-                        <td className="py-1.5 pr-3 font-mono text-xs text-slate-800 truncate">{worker.workerId}</td>
-                        <td className="py-1.5 pr-3 text-slate-800 truncate">{worker.name}</td>
-                        <td className="py-1.5 pr-3">
-                          <Badge tone={toneForWorkerStatus(worker.status)}>{worker.status}</Badge>
-                        </td>
-                        <td className="py-1.5 pr-3 text-slate-700">{formatDateTime(worker.lastHeartbeatAt)}</td>
-                        <td className="py-1.5">
-                          {worker.currentTaskId ? (
-                            <Link className="text-sky-700 hover:underline" to={`/tasks/${worker.currentTaskId}`}>
-                              {worker.currentTaskId}
-                            </Link>
-                          ) : (
-                            <span className="text-slate-500">-</span>
-                          )}
-                        </td>
-                        <td className="py-1.5">
-                          {worker.status === 'offline' ? (
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <button
-                                type="button"
-                                disabled={startingWorkerId === worker.workerId || startWorkerMutation.isPending}
-                                onClick={() => startWorkerMutation.mutate(worker.workerId)}
-                                className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {startingWorkerId === worker.workerId ? '启动中…' : '一键启动'}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={restartingWorkerId === worker.workerId || restartWorkerMutation.isPending}
-                                onClick={() => restartWorkerMutation.mutate(worker.workerId)}
-                                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {restartingWorkerId === worker.workerId ? '重启中…' : '重启'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleOpenWorkerLogs(worker.workerId)}
-                                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                              >
-                                查看日志
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => void handleOpenWorkerLogs(worker.workerId)}
-                                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                              >
-                                查看日志
-                              </button>
-                              <span className="text-xs text-slate-400">-</span>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
+            <WorkersList
+              workers={data.workers.items}
+              startingWorkerId={startingWorkerId}
+              restartingWorkerId={restartingWorkerId}
+              startWorkerMutation={startWorkerMutation}
+              restartWorkerMutation={restartWorkerMutation}
+              onOpenLogs={handleOpenWorkerLogs}
+            />
           ) : null}
 
           {/* OpenCode 服务明细 */}
@@ -1251,61 +1031,7 @@ export function DashboardPage(): JSX.Element {
           {desktopOpenCodePasswordSaveHint ? <InfoNotice compact title="密码配置" message={desktopOpenCodePasswordSaveHint} /> : null}
 
           {/* 最近任务 */}
-          <Card
-            title="最近任务"
-            actions={
-              <Link
-                to="/tasks"
-                className="text-sm text-sky-700 hover:underline"
-              >
-                查看全部
-              </Link>
-            }
-          >
-            <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 leading-5">
-              最近任务摘要，点击任务 ID 可查看详情。
-            </div>
-            <div className="overflow-auto">
-                <table className="min-w-full table-fixed text-left text-sm leading-5">
-                  <thead className="text-xs text-slate-500">
-                    <tr className="border-b border-slate-100">
-                      <th className="w-32 py-1.5 pr-2 font-medium">任务 ID</th>
-                      <th className="w-32 py-1.5 pr-2 font-medium">项目</th>
-                      <th className="py-1.5 pr-2 font-medium">意图</th>
-                      <th className="w-20 py-1.5 pr-2 font-medium">状态</th>
-                      <th className="w-28 py-1.5 font-medium">更新时间</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {data.recentTasks.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-2.5">
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 leading-5">
-                            暂无最近任务
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      data.recentTasks.map((task) => (
-                        <tr key={task.taskId}>
-                          <td className="py-2 pr-2 font-mono text-xs truncate">
-                            <Link className="text-sky-700 hover:underline" to={`/tasks/${task.taskId}`}>
-                              {task.taskId}
-                            </Link>
-                          </td>
-                          <td className="py-2 pr-2 font-mono text-xs text-slate-800 truncate">{task.projectKey}</td>
-                          <td className="py-2 pr-2 text-slate-800 truncate" title={task.intent}>{task.intent}</td>
-                          <td className="py-2 pr-2">
-                            <Badge tone="neutral">{task.status}</Badge>
-                          </td>
-                          <td className="py-2 text-slate-700 truncate">{formatDateTime(task.updatedAt)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+          <RecentTasks tasks={data.recentTasks} />
         </div>
       ) : null}
     </section>

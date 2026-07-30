@@ -27,7 +27,15 @@ export class ApiError extends Error {
   }
 }
 
-const baseURL = '/api';
+// Controller API 基础 URL
+// 在 Vite 开发环境下使用代理，相对路径
+// 在生产环境或 Tauri 桌面端使用绝对路径
+const controllerBaseUrl = import.meta.env.VITE_CONTROLLER_URL || '';
+
+// 如果配置了绝对路径，添加 trailing slash
+const baseURL = controllerBaseUrl ? 
+  (controllerBaseUrl.endsWith('/') ? controllerBaseUrl + 'api' : controllerBaseUrl + '/api') : 
+  '/api';
 
 function normalizePath(path: string): string {
   if (!path) {
@@ -228,6 +236,29 @@ export async function getPipelineExecution(pipelineId: string, executionId: stri
 
 // ========== Plugin Market API ==========
 
+/**
+ * 插件市场原始数据结构（匹配后端返回）
+ */
+export interface PluginMarketRawData {
+  meta: {
+    name: string;
+    version: string;
+    type: 'executor' | 'trigger' | 'notifier';
+    description: string;
+    author: string;
+  };
+  source: string;
+  installed: boolean;
+  downloads: number;
+  rating: number;
+  publishedAt: number;
+  updatedAt: number;
+  keywords: string[];
+}
+
+/**
+ * 转换后的插件数据结构（前端使用）
+ */
 export interface PluginEntry {
   id: string;
   name: string;
@@ -257,6 +288,25 @@ export interface InstalledPlugin {
 }
 
 /**
+ * 将插件市场原始数据转换为前端格式
+ */
+export function transformPluginEntry(raw: PluginMarketRawData): PluginEntry {
+  return {
+    id: raw.source,
+    name: raw.meta.name,
+    version: raw.meta.version,
+    description: raw.meta.description,
+    author: raw.meta.author,
+    type: raw.meta.type,
+    tags: raw.keywords,
+    downloads: raw.downloads,
+    rating: raw.rating,
+    createdAt: new Date(raw.publishedAt).toISOString(),
+    updatedAt: new Date(raw.updatedAt).toISOString(),
+  };
+}
+
+/**
  * 搜索插件
  */
 export async function searchPlugins(params: {
@@ -264,23 +314,40 @@ export async function searchPlugins(params: {
   type?: string;
   page?: number;
   pageSize?: number;
+  sortBy?: string;
+  sortOrder?: string;
 }): Promise<{ items: PluginEntry[]; total: number; page: number; pageSize: number }> {
   const searchParams = new URLSearchParams();
   if (params.keyword) searchParams.set('keyword', params.keyword);
   if (params.type) searchParams.set('type', params.type);
   if (params.page) searchParams.set('page', String(params.page));
   if (params.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  if (params.sortBy) searchParams.set('sortBy', params.sortBy);
+  if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
 
-  return apiGet<{ items: PluginEntry[]; total: number; page: number; pageSize: number }>(
+  const result = await apiGet<{ entries: PluginMarketRawData[]; total: number; page: number; pageSize: number }>(
     `/plugins/search?${searchParams.toString()}`
   );
+
+  return {
+    items: result.entries.map(transformPluginEntry),
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+  };
 }
 
 /**
  * 获取热门插件
+ * 使用搜索 API 获取按下载量排序的插件
  */
 export async function getTrendingPlugins(limit = 10): Promise<PluginEntry[]> {
-  return apiGet<PluginEntry[]>(`/plugins/trending?limit=${limit}`);
+  const result = await searchPlugins({
+    sortBy: 'downloads',
+    sortOrder: 'desc',
+    pageSize: limit,
+  });
+  return result.items;
 }
 
 /**

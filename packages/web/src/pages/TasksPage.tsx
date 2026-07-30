@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import { Badge } from '../components/ui/Badge';
 import { Card } from '../components/ui/Card';
+import { FilterBar } from '../components/ui/FilterBar';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { ErrorNotice, InfoNotice } from '../components/ui/Notice';
@@ -18,6 +19,7 @@ import {
   labelForTaskStatus,
   toneForTaskStatus,
 } from '../lib/task-ui';
+import { TaskStatsCards, computeTaskStats } from '../components/tasks';
 
 interface TaskListItem {
   taskId: string;
@@ -342,62 +344,89 @@ export function TasksPage(): JSX.Element {
   };
 
   return (
-    <section className="space-y-4">
-      {/* 顶部标题和操作 */}
+    <section className="space-y-3">
+      {/* 顶部标题 */}
       <PageHeader
         title="任务中心"
         description={pagination ? `共 ${pagination.total} 个任务` : '任务列表与筛选'}
-        actions={
-          <>
-            {/* 视图切换 */}
-            <div className="flex rounded-lg border border-slate-200 bg-white">
-            <button
-              type="button"
-              onClick={() => setViewMode('card')}
-              className={`px-3 py-2 text-sm font-medium ${
-                viewMode === 'card'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-700 hover:bg-slate-50'
-              } rounded-l-lg`}
-            >
-              卡片
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('table')}
-              className={`px-3 py-2 text-sm font-medium ${
-                viewMode === 'table'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-700 hover:bg-slate-50'
-              } rounded-r-lg border-l border-slate-200`}
-            >
-              表格
-            </button>
-            </div>
-            <button
-            type="button"
-            onClick={() => setShowCreateDialog(true)}
-            className={`${primaryButtonClassName} bg-sky-700 hover:bg-sky-800`.trim()}
-          >
-            创建任务
-          </button>
-            <button
-            type="button"
-            onClick={() => tasksQuery.refetch()}
-            className={primaryButtonClassName}
-            disabled={tasksQuery.isFetching}
-          >
-            {tasksQuery.isFetching ? '刷新中…' : '刷新'}
-          </button>
-          </>
-        }
       />
 
-      {/* 筛选条件 */}
-      <Card
-        compact
-        title="筛选"
-        actions={
+      {/* 筛选栏 */}
+      <FilterBar
+        search={{
+          placeholder: '搜索项目 key...',
+          value: projectFilter,
+          onChange: setProjectFilter,
+        }}
+        filters={[
+          {
+            key: 'status',
+            label: '状态',
+            value: statusFilter,
+            options: [
+              { value: 'DRAFT', label: '草稿' },
+              { value: 'WAITING_APPROVAL', label: '等待审批' },
+              { value: 'APPROVED', label: '已确认' },
+              { value: 'DISPATCHED', label: '已派发' },
+              { value: 'RUNNING', label: '运行中' },
+              { value: 'DONE', label: '完成' },
+              { value: 'FAILED', label: '失败' },
+              { value: 'CANCELLED', label: '已取消' },
+            ],
+            onChange: (value) => {
+              setStatusFilter(value);
+              setPage(1);
+            },
+          },
+        ]}
+        actions={[
+          {
+            label: '创建任务',
+            onClick: () => setShowCreateDialog(true),
+            variant: 'primary',
+          },
+          {
+            label: tasksQuery.isFetching ? '刷新中…' : '刷新',
+            onClick: () => tasksQuery.refetch(),
+            disabled: tasksQuery.isFetching,
+          },
+        ]}
+      />
+
+      {/* 清除筛选按钮 */}
+      {(statusFilter || projectFilter) && (
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <span>当前筛选：</span>
+          {statusFilter && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5">
+              状态：{statusFilter}
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter('');
+                  setPage(1);
+                }}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {projectFilter && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5">
+              项目：{projectFilter}
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectFilter('');
+                  setPage(1);
+                }}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                ×
+              </button>
+            </span>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -405,50 +434,12 @@ export function TasksPage(): JSX.Element {
               setProjectFilter('');
               setPage(1);
             }}
-            disabled={!statusFilter && !projectFilter}
-            className={`${secondaryButtonClassName} h-8 px-2.5 py-1 text-xs`}
+            className="text-sky-600 hover:underline"
           >
-            清除
+            清除全部
           </button>
-        }
-      >
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-1">
-            <label className="block text-xs text-slate-500">状态</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
-              className={selectClassName}
-            >
-              <option value="">全部</option>
-              <option value="DRAFT">草稿</option>
-              <option value="WAITING_APPROVAL">等待审批</option>
-              <option value="APPROVED">已确认</option>
-              <option value="DISPATCHED">已派发</option>
-              <option value="RUNNING">运行中</option>
-              <option value="DONE">完成</option>
-              <option value="FAILED">失败</option>
-              <option value="CANCELLED">已取消</option>
-            </select>
-          </div>
-          <div className="space-y-1">
-            <label className="block text-xs text-slate-500">项目</label>
-            <input
-              type="text"
-              value={projectFilter}
-              onChange={(e) => {
-                setProjectFilter(e.target.value);
-                setPage(1);
-              }}
-              placeholder="输入项目 key"
-              className={inputClassName}
-            />
-          </div>
         </div>
-      </Card>
+      )}
 
       {tasksQuery.isLoading ? <InfoNotice message="正在加载任务列表…" /> : null}
       {actionHint ? <InfoNotice title="操作结果" message={actionHint} /> : null}
@@ -456,9 +447,12 @@ export function TasksPage(): JSX.Element {
         <ErrorNotice message={tasksQuery.error instanceof Error ? tasksQuery.error.message : '未知错误'} />
       ) : null}
 
-      {/* 任务列表 - 卡片模式 */}
+      {/* 任务统计卡片 */}
+      {data?.tasks && <TaskStatsCards stats={computeTaskStats(data.tasks)} />}
+
+{/* 任务列表 - 卡片模式 */}
       {viewMode === 'card' && data?.tasks && data.tasks.length > 0 ? (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {data.tasks.map((task) => (
             <Card compact key={task.taskId} className="overflow-hidden">
               <div className="space-y-1.5">
@@ -491,7 +485,7 @@ export function TasksPage(): JSX.Element {
                     </div>
 
                     <div className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1.5 md:min-w-[140px]">
-                      <div className="mb-0.5 text-right text-[10px] font-medium uppercase tracking-wide text-slate-400">操作</div>
+                      <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">操作</div>
                       {renderTaskActions(task)}
                     </div>
                   </div>
@@ -516,47 +510,47 @@ export function TasksPage(): JSX.Element {
 
       {/* 任务列表 - 表格模式 */}
       {viewMode === 'table' && data?.tasks ? (
-            <Card compact title="任务列表">
-             <div className="overflow-auto">
-             <table className="min-w-full text-left text-sm">
-              <thead className="text-[11px] uppercase tracking-wide text-slate-500">
-                <tr className="border-b border-slate-100">
-                  <th className="py-1.5 pr-3 font-medium">任务 ID</th>
-                  <th className="py-1.5 pr-3 font-medium">项目</th>
-                  <th className="py-1.5 pr-3 font-medium">意图</th>
-                  <th className="py-1.5 pr-3 font-medium">下一步</th>
-                  <th className="py-1.5 pr-3 font-medium">优先级</th>
-                  <th className="py-1.5 pr-3 font-medium">状态</th>
-                  <th className="py-1.5 pr-3 font-medium">更新时间</th>
-                  <th className="py-1.5 font-medium text-right">操作</th>
+        <Card compact title="任务列表">
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full text-left text-sm lg:table-auto">
+              <thead className="text-[11px] uppercase tracking-wide text-slate-500 bg-slate-50 sticky top-0 z-10">
+                <tr className="border-b border-slate-200">
+                  <th className="py-2.5 px-3 pr-3 font-medium min-w-[100px]">任务 ID</th>
+                  <th className="py-2.5 px-3 pr-3 font-medium min-w-[80px] hidden md:table-cell">项目</th>
+                  <th className="py-2.5 px-3 pr-3 font-medium min-w-[150px]">意图</th>
+                  <th className="py-2.5 px-3 pr-3 font-medium min-w-[120px] hidden lg:table-cell">下一步</th>
+                  <th className="py-2.5 px-3 pr-3 font-medium min-w-[60px]">优先级</th>
+                  <th className="py-2.5 px-3 pr-3 font-medium min-w-[70px]">状态</th>
+                  <th className="py-2.5 px-3 pr-3 font-medium min-w-[120px] hidden sm:table-cell">更新时间</th>
+                  <th className="py-2.5 px-3 font-medium text-right min-w-[120px]">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {data.tasks.length > 0 ? (
                   data.tasks.map((task) => (
-                    <tr key={task.taskId}>
-                      <td className="py-1.5 pr-3 font-mono text-xs">
+                    <tr key={task.taskId} className="hover:bg-blue-50/50 transition-colors">
+                      <td className="py-2 px-3 pr-3 font-mono text-xs">
                         <Link className="text-sky-700 hover:underline" to={`/tasks/${task.taskId}`}>
                           {task.taskId}
                         </Link>
                       </td>
-                      <td className="py-1.5 pr-3 font-mono text-xs text-slate-800">{task.projectKey}</td>
-                      <td className="py-1.5 pr-3 text-slate-800 max-w-xs truncate">{task.intent}</td>
-                      <td className="py-1.5 pr-3 max-w-xs">
+                      <td className="py-2 px-3 pr-3 font-mono text-xs text-slate-800 hidden md:table-cell">{task.projectKey}</td>
+                      <td className="py-2 px-3 pr-3 text-slate-800 max-w-xs truncate" title={task.intent}>{task.intent}</td>
+                      <td className="py-2 px-3 pr-3 max-w-xs hidden lg:table-cell">
                         <div className={getNextStageClassName(task.status)}>{formatNextStageHint(task.status, task.nextStageHint)}</div>
                       </td>
-                      <td className="py-1.5 pr-3">
+                      <td className="py-2 px-3 pr-3">
                         <Badge tone={toneForPriority(task.priority)} className="text-xs">
                           {labelForPriority(task.priority)}
                         </Badge>
                       </td>
-                      <td className="py-1.5 pr-3">
+                      <td className="py-2 px-3 pr-3">
                         <Badge tone={toneForTaskStatus(task.status)} className="text-xs">
                           {labelForTaskStatus(task.status)}
                         </Badge>
                       </td>
-                      <td className="py-1.5 pr-3 text-slate-700">{formatDateTime(task.updatedAt)}</td>
-                      <td className="py-1.5 align-top">
+                      <td className="py-2 px-3 pr-3 text-slate-700 hidden sm:table-cell">{formatDateTime(task.updatedAt)}</td>
+                      <td className="py-2 px-3 align-top">
                         <div className="ml-auto max-w-[220px]">{renderTaskActions(task)}</div>
                       </td>
                     </tr>

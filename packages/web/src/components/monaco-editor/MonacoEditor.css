@@ -1,0 +1,74 @@
+.monaco-editor-container {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+}
+
+.monaco-editor-container:focus-within {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.monaco-editor-loading,
+.monaco-editor-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  background: #f9fafb;
+  color: #6b7280;
+  font-size: 14px;
+  gap: 8px;
+}
+
+.monaco-editor-error {
+  color: #ef4444;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #d1d5db;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loading-spinner::after {
+  content: '';
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 确保 Monaco Editor 的子元素有合适的样式 */
+.monaco-editor-container > div {
+  border-radius: 8px !important;
+}
+
+/* 覆盖 Monaco Editor 的默认样式 */
+.monaco-editor-light {
+  background-color: #ffffff !important;
+  foreground-color: #374151 !important;
+}
+
+.monaco-editor-dark {
+  background-color: #1e293b !important;
+  foreground-color: #cbd5e1 !important;
+}
+
+/* 代码光标和选择区域样式 */
+.monaco-editor .lines-content .cldr {
+  border-left: 2px solid #3b82f6 !important;
+}

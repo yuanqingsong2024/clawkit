@@ -457,6 +457,18 @@ describe('DAGExecutionEngine', () => {
       engine.addEventListener('pipeline:node:completed', () => events.push('pipeline:node:completed'));
       engine.addEventListener('pipeline:completed', () => events.push('pipeline:completed'));
 
+      // 设置执行器
+      engine.setNodeExecutor(async (req) => {
+        return {
+          success: true,
+          nodeId: req.nodeId,
+          result: { done: true },
+          startTime: Date.now(),
+          endTime: Date.now(),
+          status: 'completed',
+        };
+      });
+
       await engine.execute(pipeline, execution);
 
       expect(events).toContain('pipeline:started');

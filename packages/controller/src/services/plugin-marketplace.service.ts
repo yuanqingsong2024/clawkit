@@ -4,6 +4,7 @@
  */
 
 import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import type { PluginMeta, PluginType } from '@clawkit/plugin-core';
 
@@ -169,7 +170,55 @@ export class PluginMarketplaceService {
   }
 
   /**
-   * 加载已安装插件
+   * 加载已安装插件（异步版本）
+   * 使用 fs.promises 避免阻塞事件循环
+   */
+  async loadInstalledPluginsAsync(): Promise<void> {
+    if (!fs.existsSync(this.config.pluginsDir)) {
+      return;
+    }
+
+    const dirs = fs.readdirSync(this.config.pluginsDir);
+    
+    // 使用 Promise.all 并发处理，避免阻塞主线程
+    const results = await Promise.allSettled(
+      dirs.map(async (dir): Promise<{ name: string; version: string } | null> => {
+        const pluginPath = path.join(this.config.pluginsDir, dir);
+        const stat = await fsPromises.stat(pluginPath);
+        
+        if (!stat.isDirectory()) {
+          return null;
+        }
+
+        const packageJsonPath = path.join(pluginPath, 'package.json');
+        try {
+          const content = await fsPromises.readFile(packageJsonPath, 'utf-8');
+          const pkg = JSON.parse(content);
+          return { name: dir, version: pkg.version };
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    // 处理结果
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) {
+        const { name, version } = result.value;
+        this.installedPlugins.set(name, version);
+        
+        // 更新注册表中的安装状态
+        const entry = this.registry.get(name);
+        if (entry) {
+          entry.installed = true;
+          entry.installedVersion = version;
+        }
+      }
+    }
+  }
+
+  /**
+   * 加载已安装插件（同步版本，用于初始化）
    */
   private loadInstalledPlugins(): void {
     if (!fs.existsSync(this.config.pluginsDir)) {

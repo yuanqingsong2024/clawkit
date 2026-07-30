@@ -1,38 +1,31 @@
+/**
+ * Badge 组件测试
+ */
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { Badge } from '../../src/components/ui/Badge';
 
-// Badge 测试
 describe('Badge 组件', () => {
-  it('应该正确渲染文本内容', () => {
-    render(<Badge>测试内容</Badge>);
-    expect(screen.getByText('测试内容')).toBeInTheDocument();
+  it('应正确渲染文本内容', () => {
+    render(<Badge tone="neutral">测试文本</Badge>);
+    expect(screen.getByText('测试文本')).toBeTruthy();
   });
 
-  it('应该应用默认 tone', () => {
-    const { container } = render(<Badge>默认Badge</Badge>);
-    // 默认 tone 为 neutral，不应该有特殊的颜色类
-    expect(container.firstChild).toBeInTheDocument();
+  it('应支持不同的 tone 属性', () => {
+    const tones: Array<'neutral' | 'info' | 'warning' | 'failed' | 'success'> = [
+      'neutral', 'info', 'warning', 'failed', 'success'
+    ];
+    
+    tones.forEach(tone => {
+      const { container } = render(<Badge tone={tone}>{tone}</Badge>);
+      expect(container.firstChild).toBeTruthy();
+    });
   });
 
-  it('应该应用 success tone', () => {
-    render(<Badge tone="success">成功</Badge>);
-    expect(screen.getByText('成功')).toBeInTheDocument();
-  });
-
-  it('应该应用 warning tone', () => {
-    render(<Badge tone="warning">警告</Badge>);
-    expect(screen.getByText('警告')).toBeInTheDocument();
-  });
-
-  it('应该应用 failed tone', () => {
-    render(<Badge tone="failed">失败</Badge>);
-    expect(screen.getByText('失败')).toBeInTheDocument();
-  });
-
-  it('应该应用自定义 className', () => {
-    const { container } = render(<Badge className="custom-class">自定义</Badge>);
+  it('应支持 className 覆盖', () => {
+    const { container } = render(
+      <Badge tone="neutral" className="custom-class">自定义样式</Badge>
+    );
     expect(container.firstChild).toHaveClass('custom-class');
   });
 });

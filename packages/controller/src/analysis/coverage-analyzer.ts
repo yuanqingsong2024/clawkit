@@ -6,6 +6,9 @@ import type {
   TestCoverageMetrics,
   AnalysisConfig,
 } from './analysis.types';
+import { createLogger } from '@clawkit/shared';
+
+const logger = createLogger('controller.analysis.coverage');
 
 /**
  * 测试覆盖率分析服务
@@ -37,8 +40,9 @@ export class CoverageAnalyzer {
     if (typeof coverageData === 'string') {
       try {
         data = JSON.parse(coverageData);
-      } catch {
+      } catch (error) {
         // 尝试作为 LCOV 格式解析
+        logger.debug('JSON 解析失败，尝试 LCOV 格式', { error: error instanceof Error ? error.message : String(error) });
         return this.parseLcovFormat(coverageData);
       }
     } else {

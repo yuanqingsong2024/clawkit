@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-import { getGitRepoSummary, isGitRepository } from '@clawkit/shared';
+import { getGitRepoSummary, isGitRepository, createLogger } from '@clawkit/shared';
+
+const logger = createLogger('controller.services.file-browser');
 
 export interface FileItem {
   name: string;
@@ -118,7 +120,9 @@ export class FileBrowserService {
                 })()
               : undefined,
           });
-        } catch {
+        } catch (error) {
+          // 忽略单个文件读取失败，继续处理其他文件
+          logger.debug('读取文件信息失败', { file: fullPath, error: error instanceof Error ? error.message : String(error) });
           continue;
         }
       }

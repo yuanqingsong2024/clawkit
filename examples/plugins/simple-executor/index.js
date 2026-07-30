@@ -35,15 +35,23 @@ function initialize(pluginConfig, pluginContext) {
 
 /**
  * 执行命令
+ * @param command 命令字符串，将被拆分为命令和参数
+ * @param options 执行选项
  */
 async function execute(command, options = {}) {
   const cwd = options.cwd || context.workDir || process.cwd();
   const timeout = options.timeout || 60000;
   
+  // 解析命令字符串为命令和参数数组，防止命令注入
+  // 只支持通过空格分隔的命令和参数，不支持 shell 特殊字符
+  const parts = command.trim().split(/\s+/);
+  const cmd = parts[0];
+  const args = parts.slice(1);
+  
   return new Promise((resolve, reject) => {
-    const child = spawn(command, [], {
+    const child = spawn(cmd, args, {
       cwd,
-      shell: true,
+      shell: false, // 禁用 shell 模式，防止命令注入
       env: { ...process.env, ...options.env },
     });
     

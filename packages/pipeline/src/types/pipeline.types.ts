@@ -190,7 +190,7 @@ export interface DAGNode {
   /** 后续节点 */
   dependents: string[];
   /** 节点配置 */
-  config: PipelineNodeConfig;
+  config: Record<string, unknown>;
 }
 
 /**

@@ -1,7 +1,10 @@
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import { createLogger } from '@clawkit/shared';
 
 // OpenAPI 3.0 文档生成器
 // 用于生成 API 文档和 Swagger UI 支持
+
+const logger = createLogger('controller.routes.openapi');
 
 export interface OpenApiRouteOptions {
   title?: string;
@@ -373,7 +376,8 @@ export function buildOpenApiRoutes(options: OpenApiRouteOptions = {}): FastifyPl
           } else {
             reply.status(404).send('Not found');
           }
-        } catch {
+        } catch (error) {
+          logger.warn('获取 OpenAPI 资源失败', { url: cdnUrl, error: error instanceof Error ? error.message : String(error) });
           reply.status(500).send('Failed to fetch asset');
         }
       });

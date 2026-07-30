@@ -7,6 +7,7 @@
  */
 
 import crypto from 'node:crypto';
+import { z } from 'zod';
 
 import type { 
   OAuthConfig, 
@@ -25,6 +26,92 @@ export interface GitHubOAuthConfig extends OAuthConfig {
   /** Webhook 签名密钥 */
   webhookSecret?: string;
 }
+
+// ==================== Zod 验证 Schema ====================
+
+/**
+ * GitHub 提交作者 Schema
+ */
+const GitHubCommitAuthorSchema = z.object({
+  name: z.string().default(''),
+  email: z.string().default(''),
+});
+
+/**
+ * GitHub 提交 Schema
+ */
+const GitHubCommitSchema = z.object({
+  id: z.string().default(''),
+  message: z.string().default(''),
+  author: GitHubCommitAuthorSchema.optional(),
+  url: z.string().default(''),
+  added: z.array(z.string()).optional(),
+  removed: z.array(z.string()).optional(),
+  modified: z.array(z.string()).optional(),
+});
+
+/**
+ * GitHub 仓库 Schema
+ */
+const GitHubRepositorySchema = z.object({
+  name: z.string().default(''),
+  full_name: z.string().default(''),
+  html_url: z.string().default(''),
+  default_branch: z.string().default('main'),
+});
+
+/**
+ * GitHub 用户 Schema
+ */
+const GitHubUserSchema = z.object({
+  login: z.string().default(''),
+  id: z.number().optional(),
+});
+
+/**
+ * GitHub PR head/base Schema
+ */
+const GitHubPRRefSchema = z.object({
+  ref: z.string().default(''),
+  sha: z.string().default(''),
+});
+
+/**
+ * GitHub Pull Request Schema
+ */
+const GitHubPullRequestSchema = z.object({
+  title: z.string().default(''),
+  body: z.string().optional(),
+  state: z.string().default(''),
+  merged: z.boolean().default(false),
+  head: GitHubPRRefSchema.optional(),
+  base: GitHubPRRefSchema.optional(),
+});
+
+/**
+ * GitHub Push Webhook Schema
+ */
+const GitHubPushWebhookSchema = z.object({
+  ref: z.string().default(''),
+  before: z.string().default(''),
+  after: z.string().default(''),
+  commits: z.array(GitHubCommitSchema).default([]),
+  repository: GitHubRepositorySchema,
+  sender: GitHubUserSchema,
+  created_at: z.string().optional(),
+});
+
+/**
+ * GitHub Pull Request Webhook Schema
+ */
+const GitHubPullRequestWebhookSchema = z.object({
+  action: z.string().default(''),
+  number: z.number().default(0),
+  pull_request: GitHubPullRequestSchema,
+  repository: GitHubRepositorySchema,
+  sender: GitHubUserSchema,
+  created_at: z.string().optional(),
+});
 
 /**
  * GitHub OAuth 服务实现
@@ -210,82 +297,102 @@ export class GitHubOAuthService {
 
   /**
    * 解析 GitHub Webhook 事件
+   * 使用 Zod 进行运行时验证，防止外部恶意数据导致运行时错误
    */
-  parseWebhookEvent(payload: object, headers: Record<string, string | undefined>): GitHubPushPayload | GitHubPullRequestPayload | null {
+  parseWebhookEvent(payload: unknown, headers: Record<string, string | undefined>): GitHubPushPayload | GitHubPullRequestPayload | null {
     const event = headers['x-github-event'] as string | undefined;
-    const deliveryId = headers['x-github-delivery'] as string | undefined;
-
+    
     if (!event) {
       return null;
     }
 
-    const data = payload as Record<string, unknown>;
-    const repository = data.repository as Record<string, unknown> | undefined;
-    const sender = data.sender as Record<string, unknown> | undefined;
+    try {
+      // 根据事件类型使用对应的 Schema 验证
+      if (event === 'push') {
+        const result = GitHubPushWebhookSchema.safeParse(payload);
+        if (!result.success) {
+          console.warn('[GitHubOAuth] Push webhook 验证失败:', result.error.message);
+          return null;
+        }
+        const data = result.data;
 
-    const basePayload: WebhookPayload = {
-      eventType: this.mapEventType(event),
-      provider: Provider.GITHUB,
-      repository: {
-        name: (repository?.name as string) || '',
-        fullName: (repository?.full_name as string) || '',
-        url: (repository?.html_url as string) || '',
-        defaultBranch: (repository?.default_branch as string) || 'main',
-      },
-      sender: {
-        username: (sender?.login as string) || '',
-        id: String(sender?.id || ''),
-      },
-      timestamp: data.created_at as string | undefined,
-    };
-
-    // 根据事件类型添加特定字段
-    switch (event) {
-      case 'push':
         return {
-          ...basePayload,
           eventType: WebhookEventType.GITHUB_PUSH,
-          ref: (data.ref as string) || '',
-          before: (data.before as string) || '',
-          after: (data.after as string) || '',
-          commits: ((data.commits as Array<Record<string, unknown>>) || []).map((c) => ({
-            id: (c.id as string) || '',
-            message: (c.message as string) || '',
+          provider: Provider.GITHUB,
+          repository: {
+            name: data.repository.name,
+            fullName: data.repository.full_name,
+            url: data.repository.html_url,
+            defaultBranch: data.repository.default_branch,
+          },
+          sender: {
+            username: data.sender.login,
+            id: String(data.sender.id),
+          },
+          timestamp: data.created_at,
+          ref: data.ref,
+          before: data.before,
+          after: data.after,
+          commits: data.commits.map((c) => ({
+            id: c.id,
+            message: c.message,
             author: {
-              name: ((c.author as Record<string, unknown>)?.name as string) || '',
-              email: ((c.author as Record<string, unknown>)?.email as string) || '',
+              name: c.author?.name ?? '',
+              email: c.author?.email ?? '',
             },
-            url: (c.url as string) || '',
-            added: c.added as string[] | undefined,
-            removed: c.removed as string[] | undefined,
-            modified: c.modified as string[] | undefined,
+            url: c.url,
+            added: c.added,
+            removed: c.removed,
+            modified: c.modified,
           })),
         };
+      }
 
-      case 'pull_request':
+      if (event === 'pull_request') {
+        const result = GitHubPullRequestWebhookSchema.safeParse(payload);
+        if (!result.success) {
+          console.warn('[GitHubOAuth] Pull request webhook 验证失败:', result.error.message);
+          return null;
+        }
+        const data = result.data;
+
         return {
-          ...basePayload,
           eventType: WebhookEventType.GITHUB_PULL_REQUEST,
-          action: (data.action as string) || '',
-          number: (data.number as number) || 0,
+          provider: Provider.GITHUB,
+          repository: {
+            name: data.repository.name,
+            fullName: data.repository.full_name,
+            url: data.repository.html_url,
+            defaultBranch: data.repository.default_branch,
+          },
+          sender: {
+            username: data.sender.login,
+            id: String(data.sender.id),
+          },
+          timestamp: data.created_at,
+          action: data.action,
+          number: data.number,
           pullRequest: {
-            title: ((data.pull_request as Record<string, unknown>)?.title as string) || '',
-            body: (data.pull_request as Record<string, unknown>)?.body as string | undefined,
-            state: ((data.pull_request as Record<string, unknown>)?.state as string) || '',
-            merged: ((data.pull_request as Record<string, unknown>)?.merged as boolean) || false,
+            title: data.pull_request.title,
+            body: data.pull_request.body,
+            state: data.pull_request.state,
+            merged: data.pull_request.merged,
             head: {
-              ref: ((data.pull_request as Record<string, unknown>)?.head as Record<string, unknown>)?.ref as string || '',
-              sha: ((data.pull_request as Record<string, unknown>)?.head as Record<string, unknown>)?.sha as string || '',
+              ref: data.pull_request.head?.ref ?? '',
+              sha: data.pull_request.head?.sha ?? '',
             },
             base: {
-              ref: ((data.pull_request as Record<string, unknown>)?.base as Record<string, unknown>)?.ref as string || '',
-              sha: ((data.pull_request as Record<string, unknown>)?.base as Record<string, unknown>)?.sha as string || '',
+              ref: data.pull_request.base?.ref ?? '',
+              sha: data.pull_request.base?.sha ?? '',
             },
           },
         };
+      }
 
-      default:
-        return null;
+      return null;
+    } catch (error) {
+      console.error('[GitHubOAuth] Webhook 解析异常:', error);
+      return null;
     }
   }
 

@@ -5,63 +5,8 @@
 
 import { motion } from 'framer-motion';
 
-interface SkeletonProps {
-  className?: string;
-}
-
-export function Skeleton({ className = '' }: SkeletonProps): JSX.Element {
-  return (
-    <div
-      className={`animate-pulse rounded-lg bg-slate-200 ${className}`}
-    />
-  );
-}
-
-export function SkeletonText({ lines = 3, className = '' }: { lines?: number; className?: string }): JSX.Element {
-  return (
-    <div className={`space-y-2 ${className}`}>
-      {Array.from({ length: lines }).map((_, i) => (
-        <Skeleton key={i} className={i === lines - 1 ? 'w-3/4' : 'w-full'} />
-      ))}
-    </div>
-  );
-}
-
-export function SkeletonCard(): JSX.Element {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5">
-      <div className="flex items-center gap-4 mb-4">
-        <Skeleton className="h-12 w-12 rounded-xl" />
-        <div className="space-y-2 flex-1">
-          <Skeleton className="h-4 w-1/3" />
-          <Skeleton className="h-3 w-1/2" />
-        </div>
-      </div>
-      <SkeletonText lines={2} />
-    </div>
-  );
-}
-
-export function SkeletonTable({ rows = 5, cols = 4 }: { rows?: number; cols?: number }): JSX.Element {
-  return (
-    <div className="space-y-3">
-      {/* Header */}
-      <div className={`grid grid-cols-${cols} gap-4 border-b border-slate-200 pb-3`}>
-        {Array.from({ length: cols }).map((_, i) => (
-          <Skeleton key={i} className="h-4" />
-        ))}
-      </div>
-      {/* Rows */}
-      {Array.from({ length: rows }).map((_, rowIndex) => (
-        <div key={rowIndex} className={`grid grid-cols-${cols} gap-4 py-3`}>
-          {Array.from({ length: cols }).map((_, colIndex) => (
-            <Skeleton key={colIndex} className="h-4" />
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
+// Loading.tsx 中的 Skeleton 组件已移除，避免与 Skeleton.tsx 冲突
+// 如需使用骨架屏，请从 '../ui/Skeleton' 导入
 
 interface SpinnerProps {
   size?: 'sm' | 'md' | 'lg';

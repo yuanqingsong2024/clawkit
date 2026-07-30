@@ -8,6 +8,7 @@ import { Badge } from '../components/ui/Badge';
 import { PageHeader } from '../components/ui/PageHeader';
 import { ErrorNotice, InfoNotice } from '../components/ui/Notice';
 import { FileBrowserModal } from '../components/FileBrowserModal';
+import { MonacoEditor } from '../components/monaco-editor/MonacoEditor';
 import { inputClassName, primaryButtonClassName, secondaryButtonClassName } from '../components/ui/styles';
 import { apiGet, apiPut } from '../lib/api';
 import { formatDateTime } from '../lib/format';
@@ -240,7 +241,7 @@ export function ConfigPage(): JSX.Element {
             title: '编辑说明',
             content: (
               <div className="space-y-2">
-                <p>当前阶段使用 textarea 作为最小可用编辑器。</p>
+                <p>当前阶段使用 Monaco Editor 作为 YAML 编辑器，提供语法高亮和自动补全。</p>
                 <p>保存会触发 manifest 校验；若校验失败会返回明确的错误信息。</p>
               </div>
             ),
@@ -276,16 +277,17 @@ export function ConfigPage(): JSX.Element {
         <div className="space-y-3">
           {controllerConfigQuery.data?.manifestPath ? (
             <>
-              <textarea
+              <MonacoEditor
                 value={yamlText}
-                onChange={(e) => {
+                onChange={(value) => {
                   setSaveHint(null);
                   setHasUserEdited(true);
-                  setYamlText(e.target.value);
+                  setYamlText(value);
                 }}
-                className="h-[420px] w-full resize-y rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs leading-relaxed text-slate-900 focus:border-slate-400 focus:outline-none"
-                placeholder="在此粘贴或编辑 manifest YAML…"
-                spellCheck={false}
+                language="yaml"
+                theme="vs"
+                height="420px"
+                options={{ minimap: { enabled: false } }}
               />
 
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 leading-5">

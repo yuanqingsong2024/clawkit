@@ -35,16 +35,27 @@ export class ManifestManager {
   private loadManifest(): void {
     try {
       const type = detectManifestType(this.manifestPath);
-      
+
+      console.debug(`检测到配置类型: ${type}, 路径: ${this.manifestPath}`);
+
       if (type === 'full') {
-        throw new Error('当前只支持简化配置格式，请使用简化配置文件');
+        throw new Error('检测到完整配置格式，当前 Controller 只支持简化配置格式 (projects:)\n简化配置示例见 examples/minimal.yaml');
       }
 
       if (type === 'unknown') {
-        throw new Error('无法识别配置文件格式');
+        // 检测到未知格式时，尝试分析文件头部内容来提示用户
+        const content = fs.readFileSync(this.manifestPath, 'utf-8');
+        console.error('无法识别配置文件格式，文件头部内容:', content.substring(0, 200));
+        throw new Error('无法识别配置文件格式。必须是简化配置格式 (projects: ...)\n\n简化配置示例:\n' +
+          'projects:\n' +
+          '- key: my-app\n' +
+          '  path: /path/to/app\n\n' +
+          'openClaw:\n' +
+          '  webhookToken: your-token\n');
       }
 
       this.manifest = loadEditableSimpleManifest(this.manifestPath);
+      console.log('成功加载简化配置，项目数:', this.manifest.projects.length);
     } catch (error) {
       throw new Error(`加载 manifest 失败：${error instanceof Error ? error.message : String(error)}`);
     }

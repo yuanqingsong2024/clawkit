@@ -3,6 +3,10 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import { createLogger } from '@clawkit/shared';
+
+// 创建日志记录器
+const logger = createLogger('controller.routes.logs');
 
 interface LogsQueryParams {
   lines?: string;
@@ -52,11 +56,14 @@ async function readLastLines(filePath: string, lines: number): Promise<string[]>
     const allLines = content.split('\n').filter(line => line.trim().length > 0);
     return allLines.slice(-lines);
   } catch (error) {
-    console.error(`读取日志文件失败: ${filePath}`, error);
+    logger.error(`读取日志文件失败: ${filePath}`, { error: error instanceof Error ? error.message : String(error) });
     return [];
   }
 }
 
+/**
+ * 构建日志路由
+ */
 export function buildLogsRoutes(): FastifyPluginAsync {
   return async (app: FastifyInstance): Promise<void> => {
     app.get<{ Params: LogsParams; Querystring: LogsQueryParams }>(
@@ -87,11 +94,11 @@ export function buildLogsRoutes(): FastifyPluginAsync {
           });
 
           tail.stderr.on('data', (data: Buffer) => {
-            console.error(`tail stderr: ${data.toString()}`);
+            logger.warn(`tail stderr: ${data.toString()}`);
           });
 
           tail.on('error', (error: Error) => {
-            console.error('tail 进程错误:', error);
+            logger.error('tail 进程错误', { error: error.message });
             reply.raw.end();
           });
 

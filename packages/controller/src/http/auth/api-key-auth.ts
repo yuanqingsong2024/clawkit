@@ -1,8 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest, HookHandlerDoneFunction } from 'fastify';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
-import { ControllerErrorCode } from '@clawkit/shared';
+import { ControllerErrorCode, createLogger } from '@clawkit/shared';
 import { buildFailureResponse } from '../types/api-response';
+
+const logger = createLogger('controller.auth.api-key');
 
 /**
  * API Key 鉴权配置
@@ -61,7 +63,8 @@ function safeStringCompare(a: string, b: string): boolean {
     const bufA = Buffer.from(a);
     const bufB = Buffer.from(b);
     return timingSafeEqual(bufA, bufB);
-  } catch {
+  } catch (error) {
+    logger.debug('安全字符串比较失败', { error: error instanceof Error ? error.message : String(error) });
     return false;
   }
 }

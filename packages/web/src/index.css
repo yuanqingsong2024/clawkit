@@ -1,15 +1,195 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
 html,
-body {
+body,
+#root {
   height: 100%;
 }
 
+/* ========================================
+   深色模式 CSS 变量
+   ======================================== */
+:root {
+  /* 亮色主题色 */
+  --color-bg-primary: #f1f5f9;      /* slate-100 */
+  --color-bg-secondary: #ffffff;    /* white */
+  --color-bg-tertiary: #f8fafc;     /* slate-50 */
+  --color-bg-dark: #0f172a;         /* slate-900 */
+  
+  --color-text-primary: #0f172a;    /* slate-900 */
+  --color-text-secondary: #475569;  /* slate-600 */
+  --color-text-muted: #94a3b8;      /* slate-400 */
+  --color-text-inverse: #f8fafc;    /* slate-50 */
+  
+  --color-border: #e2e8f0;          /* slate-200 */
+  --color-border-muted: #f1f5f9;    /* slate-100 */
+  
+  --color-accent: #3b82f6;          /* blue-500 */
+  --color-accent-hover: #2563eb;    /* blue-600 */
+  
+  /* 滚动条颜色 */
+  --scrollbar-track: #f1f5f9;
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
+}
+
+.dark {
+  /* 深色主题色 */
+  --color-bg-primary: #0f172a;      /* slate-900 */
+  --color-bg-secondary: #1e293b;    /* slate-800 */
+  --color-bg-tertiary: #334155;     /* slate-700 */
+  --color-bg-dark: #020617;         /* slate-950 */
+  
+  --color-text-primary: #f8fafc;    /* slate-50 */
+  --color-text-secondary: #cbd5e1;  /* slate-300 */
+  --color-text-muted: #64748b;      /* slate-500 */
+  --color-text-inverse: #0f172a;    /* slate-900 */
+  
+  --color-border: #334155;          /* slate-700 */
+  --color-border-muted: #1e293b;    /* slate-800 */
+  
+  --color-accent: #60a5fa;          /* blue-400 */
+  --color-accent-hover: #3b82f6;    /* blue-500 */
+  
+  /* 深色滚动条 */
+  --scrollbar-track: #1e293b;
+  --scrollbar-thumb: #475569;
+  --scrollbar-thumb-hover: #64748b;
+}
+
 body {
-  @apply bg-slate-50 text-slate-900;
+  @apply bg-slate-100 text-slate-900;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+.dark body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
 }
 
 * {
   @apply antialiased;
+}
+
+/* 自定义滚动条样式 - 工作台风格 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-slate-100;
+  background-color: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-slate-300;
+  background-color: var(--scrollbar-thumb);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-400;
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+/* 深色模式滚动条 */
+.dark ::-webkit-scrollbar-track {
+  background-color: var(--scrollbar-track);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+/* 深色侧边栏内的滚动条 */
+.aside-dark ::-webkit-scrollbar-track {
+  @apply bg-slate-900;
+}
+
+.aside-dark ::-webkit-scrollbar-thumb {
+  @apply bg-slate-700;
+}
+
+.aside-dark ::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-600;
+}
+
+/* 优化选中效果 */
+::selection {
+  @apply bg-blue-500/30 text-slate-900;
+}
+
+/* 优化 focus 可见性 */
+:focus-visible {
+  @apply outline-none ring-2 ring-blue-500/50 ring-offset-1;
+}
+
+/* 平滑滚动 */
+html {
+  scroll-behavior: smooth;
+}
+
+/* 代码块优化 */
+pre,
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* 输入框优化 */
+input,
+textarea,
+select {
+  @apply focus:border-blue-500 focus:ring-blue-500/20;
+}
+
+/* 按钮交互优化 */
+button {
+  @apply active:scale-[0.98] transition-transform duration-100;
+}
+
+button:disabled {
+  @apply active:scale-100;
+}
+
+/* 表格优化 */
+table {
+  @apply border-collapse;
+}
+
+/* 禁用文字选择（按钮、图标等交互元素） */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ========================================
+   Toast 动画
+   ======================================== */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
 }

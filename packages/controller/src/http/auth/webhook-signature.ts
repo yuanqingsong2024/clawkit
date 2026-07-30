@@ -1,8 +1,10 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import { ControllerErrorCode } from '@clawkit/shared';
+import { ControllerErrorCode, createLogger } from '@clawkit/shared';
 import { buildFailureResponse } from '../types/api-response';
+
+const logger = createLogger('controller.auth.webhook-signature');
 
 /**
  * Webhook 签名验证配置
@@ -120,7 +122,8 @@ export function verifySignature(
       }
       return timingSafeEqual(sigBuf, expectedBuf);
     }
-  } catch {
+  } catch (error) {
+    logger.debug('签名验证异常', { error: error instanceof Error ? error.message : String(error) });
     return false;
   }
 }
@@ -252,7 +255,8 @@ export function verifyDingtalkSignature(
       return false;
     }
     return timingSafeEqual(sigBuf, expectedBuf);
-  } catch {
+  } catch (error) {
+    logger.debug('签名验证异常', { error: error instanceof Error ? error.message : String(error) });
     return false;
   }
 }

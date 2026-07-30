@@ -53,6 +53,8 @@ export class ModelCatalogService {
         authorization: `Bearer ${apiKey}`,
         accept: 'application/json',
       },
+      // 设置 30 秒超时，防止请求无限挂起
+      signal: AbortSignal.timeout(30000),
     });
 
     if (!response.ok) {

@@ -1,6 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import { createLogger } from '@clawkit/shared';
+
+const logger = createLogger('controller.cluster.health-check');
 
 /**
  * 健康检查项
@@ -373,7 +376,8 @@ export class HealthCheckService extends EventEmitter {
         alive,
         reason: alive ? undefined : '事件循环可能阻塞',
       };
-    } catch {
+    } catch (error) {
+      logger.debug('存活探针检查失败', { error: error instanceof Error ? error.message : String(error) });
       return {
         alive: false,
         reason: '进程响应异常',

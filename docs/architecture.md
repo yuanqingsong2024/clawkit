@@ -158,27 +158,47 @@ clawkit 是一个用于一键部署、配置并串联 OpenClaw 与 OpenCode 的�
 
 ## 当前状态
 
-**阶段：MVP 已完成，具备生产级主链路能力**
+**阶段：v1.0.0 已完成，v2.0-alpha 开发中**
 
-已完成：
+### v1.0.0 已完成功能
 - ✅ CLI 命令（init / doctor / plan / apply / heal）
 - ✅ Controller 任务调度与 HTTP API
 - ✅ Worker 任务执行节点（注册、心跳、拉取任务、执行、结果回传）
 - ✅ Claude Code webhook 接入与协议解析
 - ✅ TaskDraft / TaskMemory / PromptDraft 草稿与审批流
-- ✅ Web Console 轻量控制台（总览、配置、部署、修复、状态、任务中心、Setup 向导）
+- ✅ Web Console 轻量控制台
 - ✅ SQLite 持久化
 - ✅ OpenCode 执行链路（含 placeholder fallback）
 - ✅ 三种拓扑示例配置（all-in-one / hybrid / split）
 - ✅ 一键部署脚本与烟雾测试
-- ✅ Controller 多端点支持（HTTP REST / SSE 实时日志）
+- ✅ 多 worker 负载均衡（T-100）
+- ✅ 任务优先级调度（T-101）
+- ✅ SSH 节点自动化部署（T-102）
+- ✅ 高可用架构 - Controller 多实例部署（T-103）
+- ✅ 监控与告警（T-104）
+- ✅ 安全加固 - API Key 鉴权、Webhook 签名、敏感信息加密（T-105）
+- ✅ 任务抢占机制（T-106）
+- ✅ 审计日志（T-107）
+- ✅ 团队协作 - 用户/角色/权限（T-108）
+- ✅ OpenAPI 3.0 文档（T-109）
+- ✅ 自动 PR 创建（T-110）
+- ✅ GitHub/GitLab OAuth 集成（T-111）
+- ✅ 执行结果分析（T-112）
 
-已知限制：
-- ⚠️ 单 worker 模式（多 worker 负载均衡在 v1.0 实现）
-- ⚠️ manifest 保存后需手动重启服务生效（配置热重载在 v0.3 实现）
-- ⚠️ 无 WebSocket 实时日志（WebSocket 在 v0.3 实现）
-- ⚠️ 无内置用户认证（基础认证在 v1.0 实现）
+### v2.0-alpha 已完成功能
+- ✅ 插件系统核心（执行器/触发器/通知器插件接口、生命周期管理、沙箱隔离）（T-200）
+- ✅ 插件市场服务与 API（T-201）
 
-详见 [roadmap.md](./roadmap.md)
+### v0.3.x 待实现
+- ⏳ 配置热重载（T-010）
+- ⏳ WebSocket 实时日志（T-011）
+- ⏳ 任务历史页面（T-012）
+- ⏳ web 包单元测试（T-013）
+
+### v2.0 待实现
+- ⏳ 流水线编排 DAG（T-202）
+- ⏳ SDK 发布（T-203）
+- ⏳ 多云部署支持（T-204）
+- ⏳ Kubernetes 支持（T-205）
 
 详见 [roadmap.md](./roadmap.md)
