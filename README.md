@@ -1,5 +1,14 @@
 # clawkit
 
+[![CI](https://github.com/yuanqingsongqq/clawkit/actions/workflows/ci.yml/badge.svg)](https://github.com/yuanqingsongqq/clawkit/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/yuanqingsongqq/clawkit?include_prereleases)](https://github.com/yuanqingsongqq/clawkit/releases)
+[![License](https://img.shields.io/github/license/yuanqingsongqq/clawkit)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/yuanqingsongqq/clawkit)](https://github.com/yuanqingsongqq/clawkit/stargazers)
+[![Forks](https://img.shields.io/github/forks/yuanqingsongqq/clawkit)](https://github.com/yuanqingsongqq/clawkit/network/members)
+[![Last Commit](https://img.shields.io/github/last-commit/yuanqingsongqq/clawkit)](https://github.com/yuanqingsongqq/clawkit/commits)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
+
 用于串联 Claude Code、controller、worker 与 OpenCode，并提供一键部署能力的轻量 monorepo 工具集。
 
 clawkit 提供完整的一键部署能力：从配置生成、服务部署、到运行验证的全流程自动化。同时提供围绕 controller / worker 建立的任务接入、草稿确认、派发执行与结果回传链路。
