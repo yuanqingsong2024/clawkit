@@ -82,6 +82,30 @@ export const OFFICIAL_PLUGINS: MarketplaceEntry[] = [
     keywords: ['executor', 'claude', 'anthropic', 'ai', 'coding', 'opencode'],
     rating: 4.9,
   },
+  {
+    meta: {
+      name: 'github-actions',
+      version: '1.0.0',
+      type: 'executor',
+      description: 'GitHub Actions 集成，支持触发、监控和管理 workflow',
+      author: 'ClawKit Team',
+      homepage: 'https://github.com/clawkit/clawkit',
+    },
+    source: 'examples/plugins/github-actions',
+    installed: false,
+    downloads: 950,
+    publishedAt: Date.parse('2026-08-03'),
+    updatedAt: Date.parse('2026-08-03'),
+    description: 'GitHub Actions Executor 与 GitHub Actions 深度集成，支持通过 API 触发 workflow、监控运行状态、获取日志、取消/重新运行等操作，是 CI/CD 自动化的核心组件。',
+    author: {
+      name: 'ClawKit Team',
+      email: 'team@clawkit.dev',
+      homepage: 'https://github.com/clawkit',
+    },
+    license: 'MIT',
+    keywords: ['executor', 'github', 'actions', 'ci', 'cd', 'workflow', 'automation'],
+    rating: 4.8,
+  },
 
   // ========== 通知器插件 ==========
   {
