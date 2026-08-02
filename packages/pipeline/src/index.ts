@@ -1,13 +1,19 @@
 /**
- * Pipeline 包入口
- * 导出所有公开 API
+ * 流水线包导出
  */
 
-// 模型
-export * from './models';
-
-// 引擎
-export * from './engine/dag-engine';
+// 类型
+export * from './types/pipeline.types';
 
 // 服务
-export * from './services/pipeline.service';
+export { PipelineEngine } from './services/pipeline-engine';
+export { DAGScheduler, DAGGraph } from './services/dag-scheduler';
+export { NodeExecutor, registerExecutor, getExecutor } from './services/node-executor';
+export { RetryManager, RetryStrategy } from './services/retry-manager';
+export { PipelineValidator } from './services/pipeline-validator';
+export { PipelineSerializer } from './services/pipeline-serializer';
+
+// 编辑器
+export { PipelineEditorApi } from './editor/pipeline-editor-api';
+export { PipelineEditor } from './editor/PipelineEditor';
+export type { PipelineEditorProps } from './editor/PipelineEditor';

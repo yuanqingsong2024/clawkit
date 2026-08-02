@@ -223,6 +223,13 @@ export function PipelineListPage(): JSX.Element {
                   >
                     查看
                   </Link>
+                  <Link
+                    to={`/pipelines/${pipeline.id}/edit`}
+                    className={`${compactButtonClassName} px-2 py-1 text-xs border border-slate-200 hover:bg-slate-50`}
+                    title="可视化编辑"
+                  >
+                    ✏️
+                  </Link>
                   <button
                     onClick={() => handleExecute(pipeline.id)}
                     disabled={executing === pipeline.id}
@@ -233,7 +240,7 @@ export function PipelineListPage(): JSX.Element {
                   <button
                     onClick={() => handleDelete(pipeline.id)}
                     disabled={deleting === pipeline.id}
-                    className={`${compactButtonClassName} border border-slate-200 hover:bg-slate-50`}
+                    className={`${compactButtonClassName} border border-slate-200 hover:bg-red-50 hover:text-red-500`}
                     title="删除流水线"
                   >
                     {deleting === pipeline.id ? '删除中…' : '🗑️'}

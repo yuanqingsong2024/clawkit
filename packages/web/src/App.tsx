@@ -9,6 +9,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { LogsPage } from './pages/LogsPage';
 import { PipelineListPage } from './pages/PipelineListPage';
 import { PipelineDetailPage } from './pages/PipelineDetailPage';
+import { PipelineEditorPage } from './pages/PipelineEditorPage';
 import { PluginMarketPage } from './pages/PluginMarketPage';
 import { PluginListPage } from './pages/PluginListPage';
 import { ProjectsPage } from './pages/ProjectsPage';
@@ -36,7 +37,8 @@ export default function App(): JSX.Element {
             <Route element={<Layout />}>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/pipelines" element={<PipelineListPage />} />
-              <Route path="/pipelines/create" element={<PipelineDetailPage />} />
+              <Route path="/pipelines/create" element={<PipelineEditorPage />} />
+              <Route path="/pipelines/:id/edit" element={<PipelineEditorPage />} />
               <Route path="/pipelines/:id" element={<PipelineDetailPage />} />
               <Route path="/plugins" element={<PluginMarketPage />} />
               <Route path="/plugins/manage" element={<PluginListPage />} />

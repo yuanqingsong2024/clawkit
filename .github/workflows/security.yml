@@ -1,0 +1,82 @@
+name: Security
+
+on:
+  schedule:
+    # 每周一早上 8 点运行
+    - cron: '0 0 * * 1'
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  security-events: write
+  contents: read
+
+jobs:
+  security-scan:
+    name: 安全扫描
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: 安装依赖
+        run: pnpm install
+
+      - name: 运行 npm audit
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
+
+      - name: 运行 Snyk 安全扫描
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: 上传安全报告
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+
+  dependency-review:
+    name: 依赖审查
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 检查依赖变更
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            git diff --name-only origin/${{ github.base_ref }}...HEAD -- '**/package.json' '**/pnpm-lock.yaml'
+          fi
+
+  secret-scan:
+    name: 密钥扫描
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 运行 TruffleHog
+        uses: edplato/trufflehog-actions-scan@v1.1.0
+        with:
+          scanDepth: '50'
+          scanArgs: '-results=/github/workspace/trufflehog_results.json'
+        continue-on-error: true

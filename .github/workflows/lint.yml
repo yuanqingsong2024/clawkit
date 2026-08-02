@@ -1,0 +1,46 @@
+name: Lint
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+
+jobs:
+  lint:
+    name: 代码检查
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 运行 ESLint
+        run: pnpm eslint
+
+      - name: 检查文件格式
+        run: pnpm prettier --check .
+
+      - name: 检查 commit 格式
+        if: github.event_name == 'push'
+        run: |
+          commit_msg=$(git log --format=%B -n 1 HEAD)
+          echo "Commit message: $commit_msg"
+          # 检查是否符合 Conventional Commits 格式
+          if ! echo "$commit_msg" | grep -qE '^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .+'; then
+            echo "警告: Commit message 不符合 Conventional Commits 格式"
+            echo "格式: <type>(<scope>): <subject>"
+            echo "类型: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert"
+          fi
