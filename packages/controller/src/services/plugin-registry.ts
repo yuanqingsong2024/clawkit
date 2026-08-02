@@ -180,6 +180,30 @@ export const OFFICIAL_PLUGINS: MarketplaceEntry[] = [
     keywords: ['notifier', 'slack', 'webhook', 'block-kit', 'notification'],
     rating: 4.5,
   },
+  {
+    meta: {
+      name: 'wework-notifier',
+      version: '1.0.0',
+      type: 'notifier',
+      description: '企业微信 Webhook 通知器，支持 Markdown 消息和 @成员',
+      author: 'ClawKit Team',
+      homepage: 'https://github.com/clawkit/clawkit',
+    },
+    source: 'examples/plugins/wework-notifier',
+    installed: false,
+    downloads: 850,
+    publishedAt: Date.parse('2026-08-03'),
+    updatedAt: Date.parse('2026-08-03'),
+    description: 'WeWork Notifier 通过企业微信 Webhook 发送通知消息。支持 Markdown、文本、图文、模板卡片等多种消息类型，提供 @成员、签名验证等企业级功能。',
+    author: {
+      name: 'ClawKit Team',
+      email: 'team@clawkit.dev',
+      homepage: 'https://github.com/clawkit',
+    },
+    license: 'MIT',
+    keywords: ['notifier', 'wework', 'wecom', 'webhook', 'notification', '企业微信'],
+    rating: 4.7,
+  },
 
   // ========== 触发器插件 ==========
   {
@@ -277,6 +301,30 @@ export const OFFICIAL_PLUGINS: MarketplaceEntry[] = [
     license: 'MIT',
     keywords: ['trigger', 'sentry', 'webhook', 'error', 'monitoring'],
     rating: 4.4,
+  },
+  {
+    meta: {
+      name: 'cron-trigger',
+      version: '1.0.0',
+      type: 'trigger',
+      description: 'Cron 定时触发器，支持基于 Cron 表达式的定时任务',
+      author: 'ClawKit Team',
+      homepage: 'https://github.com/clawkit/clawkit',
+    },
+    source: 'examples/plugins/cron-trigger',
+    installed: false,
+    downloads: 600,
+    publishedAt: Date.parse('2026-08-03'),
+    updatedAt: Date.parse('2026-08-03'),
+    description: 'Cron Trigger 支持基于 Cron 表达式的定时任务触发。提供标准 5 字段和扩展 6 字段格式支持、时区配置、任务管理等功能，适用于周期性任务调度场景。',
+    author: {
+      name: 'ClawKit Team',
+      email: 'team@clawkit.dev',
+      homepage: 'https://github.com/clawkit',
+    },
+    license: 'MIT',
+    keywords: ['trigger', 'cron', 'schedule', 'timer', '定时任务'],
+    rating: 4.6,
   },
   {
     meta: {
