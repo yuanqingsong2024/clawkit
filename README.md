@@ -1,11 +1,11 @@
 # clawkit
 
-[![CI](https://github.com/yuanqingsongqq/clawkit/actions/workflows/ci.yml/badge.svg)](https://github.com/yuanqingsongqq/clawkit/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/yuanqingsongqq/clawkit?include_prereleases)](https://github.com/yuanqingsongqq/clawkit/releases)
-[![License](https://img.shields.io/github/license/yuanqingsongqq/clawkit)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/yuanqingsongqq/clawkit)](https://github.com/yuanqingsongqq/clawkit/stargazers)
-[![Forks](https://img.shields.io/github/forks/yuanqingsongqq/clawkit)](https://github.com/yuanqingsongqq/clawkit/network/members)
-[![Last Commit](https://img.shields.io/github/last-commit/yuanqingsongqq/clawkit)](https://github.com/yuanqingsongqq/clawkit/commits)
+[![CI](https://github.com/yuanqingsong2024/clawkit/actions/workflows/ci.yml/badge.svg)](https://github.com/yuanqingsong2024/clawkit/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/yuanqingsong2024/clawkit?include_prereleases)](https://github.com/yuanqingsong2024/clawkit/releases)
+[![License](https://img.shields.io/github/license/yuanqingsong2024/clawkit)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/yuanqingsong2024/clawkit)](https://github.com/yuanqingsong2024/clawkit/stargazers)
+[![Forks](https://img.shields.io/github/forks/yuanqingsong2024/clawkit/network/members)
+[![Last Commit](https://img.shields.io/github/last-commit/yuanqingsong2024/clawkit)](https://github.com/yuanqingsong2024/clawkit/commits)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
 
@@ -13,28 +13,46 @@
 
 clawkit 提供完整的一键部署能力：从配置生成、服务部署、到运行验证的全流程自动化。同时提供围绕 controller / worker 建立的任务接入、草稿确认、派发执行与结果回传链路。
 
-## 🎉 v0.2.0 新增功能（2026-07-11）
+## 🎉 v1.0.0 正式版（2026-08-28）
 
-### 插件系统（@clawkit/plugin-core）
+经过 v0.x 系列的迭代，clawkit 正式发布 1.0.0 版本，核心能力已稳定：
+
+### 核心能力
+- ✅ **一键部署**：自动部署 Claude Code（Docker）和 OpenCode（本地安装）
+- ✅ **任务主链路**：webhook → 草稿 → 审批 → 派发 → 执行 → 结果回传
+- ✅ **CLI 工具**：`init / doctor / plan / apply / heal / onboard / verify`
+- ✅ **Web Console**：总览、配置、部署、修复、状态、任务中心
+- ✅ **插件系统**：ExecutorPlugin / TriggerPlugin / NotifierPlugin
+- ✅ **流水线编排**：DAG 执行引擎，支持拓扑排序与并行执行
+- ✅ **三种部署拓扑**：all-in-one / hybrid / split
+
+### 新增功能（相比 v0.2.x）
+
+#### 插件系统（@clawkit/plugin-core）
 - ✅ **执行器插件接口**（ExecutorPlugin）：支持自定义任务执行逻辑
 - ✅ **触发器插件接口**（TriggerPlugin）：支持自定义触发条件（手动、定时、事件、Webhook）
 - ✅ **通知器插件接口**（NotifierPlugin）：支持任务状态变更通知
 - ✅ **插件生命周期管理**：安装、启用、禁用、卸载
 - ✅ **插件沙箱隔离配置**：安全执行第三方插件
 
-### 插件市场（@clawkit/market）
+#### 插件市场（@clawkit/market）
 - ✅ **插件搜索与浏览 API**
 - ✅ **插件安装/卸载/更新服务**
 - ✅ **插件详情 API**
 - ✅ **插件注册表管理**
 
-### 流水线编排（@clawkit/pipeline）
+#### 流水线编排（@clawkit/pipeline）
 - ✅ **DAG 执行引擎**：支持拓扑排序、并行执行、条件执行
 - ✅ **流水线数据模型**：Pipeline、Stage 定义与验证
 - ✅ **流水线服务**：CRUD 操作、执行控制、统计信息
 - ✅ **REST API**：完整的流水线管理接口
 
 ## 📦 历史版本
+
+### v0.2.x（2026-07-11）
+- ✅ 插件系统（plugin-core）：ExecutorPlugin、TriggerPlugin、NotifierPlugin
+- ✅ 插件市场（market）：搜索、安装、卸载、更新
+- ✅ 流水线编排（pipeline）：DAG 执行引擎、CRUD API
 
 ### v0.1.x 核心能力
 - ✅ **一键部署**：`apply --deploy` 自动部署 Claude Code 和 OpenCode
@@ -371,6 +389,8 @@ bash ./scripts/restart-real-stack.sh
 - [`docs/controller-flow.md`](./docs/controller-flow.md)：controller 内部草稿与审批闭环
 - [`docs/dispatch-flow.md`](./docs/dispatch-flow.md)：任务派发、执行与结果回写链路
 - [`docs/worker.md`](./docs/worker.md)：worker 设计与运行说明
+- [`docs/worker-cli-executor-design.md`](./docs/worker-cli-executor-design.md)：Worker 多 CLI 执行适配层设计
+- [`docs/reliability-and-observability.md`](./docs/reliability-and-observability.md)：任务取消、执行超时、Prometheus 与 Redis 可选持久化
 
 ## 开发说明
 

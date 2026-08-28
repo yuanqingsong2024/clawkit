@@ -105,31 +105,30 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$CONTROLLER_URL/api/health" 
 
 if [ "$HTTP_CODE" = "200" ]; then
   log_success "1. Controller 健康检查通过"
-  ((PASS_COUNT++))
+  PASS_COUNT=$((PASS_COUNT + 1))
 elif [ "$HTTP_CODE" = "000" ]; then
   log_error "1. Controller 无法连接（可能未启动或地址错误）"
-  ((FAIL_COUNT++))
+  FAIL_COUNT=$((FAIL_COUNT + 1))
 else
   log_warn "1. Controller 健康检查返回异常状态码：$HTTP_CODE"
-  ((WARN_COUNT++))
+  WARN_COUNT=$((WARN_COUNT + 1))
 fi
 
 # ========== 2. Worker 注册状态 ==========
 WORKERS_RESPONSE=$(curl -s "$CONTROLLER_URL/api/workers" 2>/dev/null || echo "")
 
 if [ -n "$WORKERS_RESPONSE" ]; then
-  WORKER_COUNT=$(echo "$WORKERS_RESPONSE" | grep -o '"id"' | wc -l | tr -d ' ')
-  
-  if [ "$WORKER_COUNT" -gt 0 ]; then
-    log_success "2. Worker 已注册（数量：$WORKER_COUNT）"
-    ((PASS_COUNT++))
-  else
+  if echo "$WORKERS_RESPONSE" | grep -q '"workers":\[\]'; then
     log_warn "2. 未发现已注册的 Worker"
-    ((WARN_COUNT++))
+    WARN_COUNT=$((WARN_COUNT + 1))
+  else
+    WORKER_COUNT=$(echo "$WORKERS_RESPONSE" | grep -o '"workerId"' | wc -l)
+    log_success "2. Worker 已注册（数量：$WORKER_COUNT）"
+    PASS_COUNT=$((PASS_COUNT + 1))
   fi
 else
   log_error "2. 无法获取 Worker 列表"
-  ((FAIL_COUNT++))
+  FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 
 # ========== 3. Web Console 可访问性 ==========
@@ -137,27 +136,27 @@ WEB_HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$CONTROLLER_URL/" 2>/dev
 
 if [ "$WEB_HTTP_CODE" = "200" ]; then
   log_success "3. Web Console 可访问"
-  ((PASS_COUNT++))
+  PASS_COUNT=$((PASS_COUNT + 1))
 elif [ "$WEB_HTTP_CODE" = "000" ]; then
   log_error "3. Web Console 无法连接"
-  ((FAIL_COUNT++))
+  FAIL_COUNT=$((FAIL_COUNT + 1))
 else
   log_warn "3. Web Console 返回异常状态码：$WEB_HTTP_CODE"
-  ((WARN_COUNT++))
+  WARN_COUNT=$((WARN_COUNT + 1))
 fi
 
 # ========== 4. manifest 文件可读取 ==========
 if [ -f "$MANIFEST_PATH" ]; then
   if grep -q "profile:" "$MANIFEST_PATH" 2>/dev/null || grep -q "projects:" "$MANIFEST_PATH" 2>/dev/null; then
     log_success "4. manifest 文件可读取（$MANIFEST_PATH）"
-    ((PASS_COUNT++))
+    PASS_COUNT=$((PASS_COUNT + 1))
   else
     log_error "4. manifest 文件格式无效：$MANIFEST_PATH"
-    ((FAIL_COUNT++))
+    FAIL_COUNT=$((FAIL_COUNT + 1))
   fi
 else
   log_warn "4. manifest 文件不存在（$MANIFEST_PATH），跳过检查"
-  ((WARN_COUNT++))
+  WARN_COUNT=$((WARN_COUNT + 1))
 fi
 
 # ========== 5. 数据库可写入 ==========
@@ -165,10 +164,10 @@ DB_CHECK_RESPONSE=$(curl -s -X POST "$CONTROLLER_URL/api/system/db-check" 2>/dev
 if echo "$DB_CHECK_RESPONSE" | grep -q '"writable"'; then
   if echo "$DB_CHECK_RESPONSE" | grep -q '"writable":true'; then
     log_success "5. 数据库可写入"
-    ((PASS_COUNT++))
+    PASS_COUNT=$((PASS_COUNT + 1))
   else
     log_error "5. 数据库不可写入"
-    ((FAIL_COUNT++))
+    FAIL_COUNT=$((FAIL_COUNT + 1))
   fi
 else
   # 如果 API 不存在，尝试直接检查数据库文件
@@ -176,14 +175,14 @@ else
   if [ -f "$DB_PATH" ]; then
     if [ -w "$DB_PATH" ]; then
       log_success "5. 数据库文件可写入（$DB_PATH）"
-      ((PASS_COUNT++))
+      PASS_COUNT=$((PASS_COUNT + 1))
     else
       log_error "5. 数据库文件不可写入（$DB_PATH）"
-      ((FAIL_COUNT++))
+      FAIL_COUNT=$((FAIL_COUNT + 1))
     fi
   else
     log_warn "5. 数据库文件不存在（$DB_PATH），跳过检查"
-    ((WARN_COUNT++))
+    WARN_COUNT=$((WARN_COUNT + 1))
   fi
 fi
 

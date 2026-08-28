@@ -14,6 +14,7 @@ import { WorkerRegistrationService } from './services/registration-service';
 import { ResultSubmitService } from './services/result-submit-service';
 import { TaskPullService } from './services/task-pull-service';
 import { TaskStreamService } from './services/task-stream-service';
+import { TaskCancellationService } from './services/task-cancellation-service';
 
 export class Worker {
   private config: WorkerConfig;
@@ -23,6 +24,7 @@ export class Worker {
   private taskPullService: TaskPullService;
   private resultSubmitService: ResultSubmitService;
   private taskStreamService: TaskStreamService;
+  private taskCancellationService: TaskCancellationService;
   private executorFactoryService: ExecutorFactoryService;
   private executor: TaskExecutor;
   private fallbackExecutor: TaskExecutor;
@@ -38,7 +40,10 @@ export class Worker {
     this.executorFactoryService = getExecutorFactoryService();
     this.executorFactoryService.initialize();
 
-    this.registrationService = new WorkerRegistrationService(this.config);
+    this.registrationService = new WorkerRegistrationService(
+      this.config,
+      () => this.detectSupportedExecutors(),
+    );
     this.heartbeatService = new HeartbeatService(
       this.config,
       () => this.getWorkerStatus(),
@@ -49,6 +54,7 @@ export class Worker {
       },
     );
     this.taskPullService = new TaskPullService(this.config);
+    this.taskCancellationService = new TaskCancellationService(this.config);
     this.resultSubmitService = new ResultSubmitService(this.config);
     this.taskStreamService = new TaskStreamService(
       this.config,
@@ -107,20 +113,61 @@ export class Worker {
    */
   private selectExecutor(task: any): TaskExecutor {
     const executorType = task.executorType || (this.config.openCode.mode === 'cli' ? 'claude-code' : 'opencode');
-    
+    const normalizedType = this.executorFactoryService.normalizeExecutorType(executorType);
+
+    // 配置了执行器白名单时，避免任务静默调用未声明的本地 CLI。
+    if ((this.config.executors?.length ?? 0) > 0 && !this.config.executors.some((type) => this.executorFactoryService.normalizeExecutorType(type) === normalizedType)) {
+      this.logger.warn(`执行器 ${executorType} 不在 Worker 白名单中，使用备用执行器`);
+      return this.fallbackExecutor;
+    }
+
     try {
+      const configuredPath = this.config.cliPaths[normalizedType];
       return this.executorFactoryService.createExecutor({
-        type: executorType,
-        config: task.executorConfig || {
-          baseUrl: this.config.openCode.server.baseUrl,
-          passwordEnv: this.config.openCode.server.passwordEnv,
-          timeoutMs: this.config.openCode.timeoutMs,
+        type: normalizedType,
+        config: {
+          ...(task.executorConfig || {
+            baseUrl: this.config.openCode.server.baseUrl,
+            passwordEnv: this.config.openCode.server.passwordEnv,
+            timeoutMs: this.config.openCode.timeoutMs,
+          }),
+          ...(configuredPath ? { binaryPath: configuredPath } : {}),
         },
       });
     } catch (error) {
       this.logger.warn(`创建执行器 ${executorType} 失败: ${error}，使用备用执行器`);
       return this.fallbackExecutor;
     }
+  }
+
+  private async detectSupportedExecutors(): Promise<string[]> {
+    const cliTypes = new Set(['opencode-cli', 'claude-code', 'codex-cli']);
+    const configuredTypes = (this.config.executors || [])
+      .map((type) => this.executorFactoryService.normalizeExecutorType(type))
+      .filter((type) => cliTypes.has(type));
+    const supported: string[] = [];
+
+    for (const type of configuredTypes) {
+      try {
+        const executor = this.executorFactoryService.createExecutor({
+          type,
+          config: {
+            ...(this.config.cliPaths[type] ? { binaryPath: this.config.cliPaths[type] } : {}),
+            timeoutMs: 5000,
+          },
+        });
+        const healthy = executor.healthCheck ? await executor.healthCheck() : false;
+        if (healthy) {
+          supported.push(type);
+        } else {
+          this.logger.warn(`执行器 ${type} 未通过可用性检查`);
+        }
+      } catch (error) {
+        this.logger.warn(`探测执行器 ${type} 失败：${error}`);
+      }
+    }
+
+    return Array.from(new Set(supported));
   }
 
   private getWorkerStatus(): WorkerStatus {
@@ -143,6 +190,8 @@ export class Worker {
 
       try {
         this.taskStreamService.start();
+        // SSE 只负责低延迟通知，保留低频轮询作为断线和事件丢失兜底
+        this.startPolling();
         this.logger.info(`Worker ${this.config.workerId} 已启动，使用 SSE 接收任务通知`);
       } catch (error) {
         this.logger.warn(`SSE 连接失败，降级为轮询模式: ${error}`);
@@ -210,7 +259,7 @@ export class Worker {
         this.runningTasks.delete(task.taskId);
       });
     } catch (error) {
-      this.logger.error(`任务拉取失败: ${error}`);
+      this.logger.error(`任务拉取失败: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -221,13 +270,21 @@ export class Worker {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            reject(new Error(`任务执行超时（${timeoutMs}ms）`));
-          }, timeoutMs);
-        });
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(() => abortController.abort('timeout'), timeoutMs);
+      const cancellationInterval = setInterval(() => {
+        this.taskCancellationService.isCancelled(task.taskId)
+          .then((cancelled) => {
+            if (cancelled) abortController.abort('cancelled');
+          })
+          .catch((error: unknown) => {
+            if (error instanceof Error) {
+              this.logger.warn(`任务 ${task.taskId} 取消状态查询失败: ${error.message}`);
+            }
+          });
+      }, Math.min(this.config.pollIntervalMs, 1000));
 
+      try {
         // 构建执行上下文（V2 格式）
         // 兼容旧版 task.openCode 和新版 task.executorConfig
         const executorConfig = task.executorConfig ?? {
@@ -262,9 +319,21 @@ export class Worker {
             forbiddenActions: [],
             highRiskHandling: 'skip',
           },
+          abortSignal: abortController.signal,
         });
 
-        const result = await Promise.race([executionPromise, timeoutPromise]);
+        const result = await Promise.race([
+          executionPromise,
+          new Promise<never>((_, reject) => {
+            abortController.signal.addEventListener('abort', () => {
+              reject(new Error(
+                abortController.signal.reason === 'cancelled'
+                  ? '任务已取消'
+                  : `任务执行超时（${timeoutMs}ms）`,
+              ));
+            }, { once: true });
+          }),
+        ]);
 
         await this.resultSubmitService.submitResult({
           taskId: result.taskId,
@@ -290,6 +359,10 @@ export class Worker {
         return;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
+        if (lastError.message.includes('任务已取消')) {
+          this.logger.info(`任务 ${task.taskId} 已取消`);
+          return;
+        }
         const isTimeout = lastError.message.includes('任务执行超时');
 
         if (attempt < maxRetries) {
@@ -299,6 +372,9 @@ export class Worker {
         } else {
           this.logger.error(`任务 ${task.taskId} 重试 ${maxRetries} 次后仍${isTimeout ? '超时' : '失败'}`);
         }
+      } finally {
+        clearTimeout(timeoutId);
+        clearInterval(cancellationInterval);
       }
     }
 

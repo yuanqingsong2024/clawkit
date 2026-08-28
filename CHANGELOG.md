@@ -4,6 +4,40 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.0] - 2026-08-28
+
+正式版发布！经过 v0.x 系列的迭代，核心能力已稳定。
+
+### 🎉 核心能力
+
+- ✅ **一键部署**：自动部署 Claude Code（Docker）和 OpenCode（本地安装）
+- ✅ **任务主链路**：webhook → 草稿 → 审批 → 派发 → 执行 → 结果回传
+- ✅ **CLI 工具**：`init / doctor / plan / apply / heal / onboard / verify`
+- ✅ **Web Console**：总览、配置、部署、修复、状态、任务中心
+- ✅ **插件系统**：ExecutorPlugin / TriggerPlugin / NotifierPlugin
+- ✅ **流水线编排**：DAG 执行引擎，支持拓扑排序与并行执行
+- ✅ **三种部署拓扑**：all-in-one / hybrid / split
+
+### 🛠️ 改进
+
+- 优化 Worker 配置防护，支持 optional executors
+- 修复烟雾测试脚本 bash 语法问题（`((VAR++))` 在 `set -e` 下提前退出）
+- 更新 README 为 v1.0.0 正式版格式
+- Controller 版本标识更新为 v1.0.0
+
+### 🔧 修复
+
+- 修复 Worker 在 executors 未配置时崩溃的问题
+- 修复 smoke-test.sh 脚本计数器在 `set -euo pipefail` 下提前退出
+
+### 📝 文档
+
+- 更新 README.md 版本标题和功能列表
+- 补充 v1.0.0 发布说明
+- 完善核心链路描述
+
+---
+
 ## [0.2.0] - 2026-07-11
 
 ### 🎉 新增功能
