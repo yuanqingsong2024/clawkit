@@ -90,6 +90,9 @@ function runPlanServiceTests() {
   // 测试生成 dry-run 计划
   testGenerateDryRunPlan();
 
+  // 测试部署模式动作
+  testDeploymentModeActions();
+
   console.log('✓ PlanService 测试通过');
 }
 
@@ -224,6 +227,27 @@ function testGenerateDryRunPlan() {
     assert.ok(stepTypes.includes(StepType.START_SERVICE));
 
     console.log('  ✓ 生成 dry-run 计划成功');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function testDeploymentModeActions() {
+  const service = new PlanServiceImpl();
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawkit-plan-'));
+  const workDir = path.join(tempDir, 'work');
+  const manifestPath = path.join(tempDir, 'modes.yaml');
+  fs.mkdirSync(workDir, { recursive: true });
+  const manifest = buildValidManifest(workDir).replace('publicUrl: "http://127.0.0.1:18000"', 'publicUrl: "http://127.0.0.1:18000"\n    deployMode: "skip"');
+  fs.writeFileSync(manifestPath, manifest, 'utf8');
+  try {
+    const loaded = service.loadManifest(manifestPath);
+    assert.ok(loaded.manifest);
+    const plan = service.generateDryRunPlan(loaded.manifest, manifestPath);
+    const action = plan.actions.find(a => a.description.includes('跳过 OpenClaw 部署'));
+    assert.ok(action);
+    assert.equal(action.implemented, true);
+    console.log('  ✓ skip 模式生成正确动作');
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

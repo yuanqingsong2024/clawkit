@@ -4,10 +4,11 @@
 
 manifest 是 clawkit 的统一输入模型，CLI、controller、worker 与部署文件生成都围绕它展开。
 
-当前仓库同时支持两种配置形态：
+当前仓库同时支持三种配置形态：
 
 1. **简化配置**：推荐新用户使用，只保留 `projects` 和 `openClaw` 等核心字段
 2. **完整配置**：用于高级场景，包含 `profile / nodes / services / workers / runtime` 等完整结构
+3. **V2 配置**：在完整配置基础上增加 `executors` 与 `triggers`，支持通用执行器和多种触发器
 
 ## 2. 推荐的简化配置
 
@@ -26,7 +27,7 @@ openClaw:
   webhookToken: your-webhook-token
 ```
 
-简化配置会在 `doctor / plan / apply / start` 内部自动展开为完整配置。
+简化配置会在 `doctor / plan / apply / start` 内部自动展开为完整配置。V2 配置通过顶层 `executors` 或 `triggers` 字段自动识别；相对路径建议以 manifest 文件所在目录为基准填写。
 
 ## 3. 完整配置顶层结构
 

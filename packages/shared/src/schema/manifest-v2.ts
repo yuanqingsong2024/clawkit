@@ -184,3 +184,31 @@ export type WorkerV2 = z.infer<typeof WorkerV2Schema>;
  */
 export const WorkersV2Schema = z.array(WorkerV2Schema).min(1, '至少需要配置一个 Worker');
 export type WorkersV2 = z.infer<typeof WorkersV2Schema>;
+
+/** V2 Manifest 顶层配置。基础字段保持与 V1 一致，同时增加执行器和触发器定义。 */
+export const ManifestV2Schema = z.object({
+  version: z.string().optional(),
+  profile: z.object({
+    name: z.string().min(1),
+    version: z.string().optional(),
+    topology: z.enum(['all-in-one', 'hybrid', 'split']),
+    description: z.string().optional(),
+  }),
+  nodes: z.record(z.string(), z.object({
+    type: z.enum(['local', 'ssh']),
+    workDir: z.string().optional(),
+    host: z.string().optional(),
+    port: z.number().int().min(1).max(65535).optional(),
+    username: z.string().optional(),
+    keyPath: z.string().optional(),
+    password: z.string().optional(),
+  })),
+  services: z.record(z.string(), z.unknown()),
+  runtime: z.record(z.string(), z.unknown()),
+  workers: WorkersV2Schema,
+  executors: ExecutorsSchema.default({}),
+  triggers: TriggersSchema.default({}),
+  notify: z.record(z.string(), z.unknown()).optional(),
+  deploy: z.record(z.string(), z.unknown()).optional(),
+});
+export type ManifestV2 = z.infer<typeof ManifestV2Schema>;

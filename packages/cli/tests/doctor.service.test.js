@@ -81,6 +81,9 @@ async function runDoctorServiceTests() {
   // 测试完整配置校验
   await testFullManifest();
 
+  // 测试服务端口冲突
+  await testPortConflict();
+
   console.log('✓ DoctorService 测试通过');
 }
 
@@ -172,6 +175,25 @@ async function testFullManifest() {
     assert.equal(nodeCheck.status, CheckStatus.PASS);
 
     console.log('  ✓ 完整配置校验通过');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function testPortConflict() {
+  const service = new DoctorServiceImpl();
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawkit-doctor-'));
+  const manifestPath = path.join(tempDir, 'conflict.yaml');
+  const workDir = path.join(tempDir, 'work');
+  fs.mkdirSync(workDir, { recursive: true });
+  const manifest = buildFullManifest(workDir).replace('port: 4096', 'port: 8787');
+  fs.writeFileSync(manifestPath, manifest, 'utf8');
+  try {
+    const result = await service.diagnose(manifestPath);
+    const conflict = result.checks.find(c => c.name === '端口冲突检查');
+    assert.ok(conflict);
+    assert.equal(conflict.status, CheckStatus.FAIL);
+    console.log('  ✓ 端口冲突时正确返回 FAIL 状态');
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
