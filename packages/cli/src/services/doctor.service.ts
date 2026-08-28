@@ -3,11 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { execSync, spawnSync } from 'child_process';
 import {
-  ManifestSchema,
-  formatValidationIssue,
   CheckStatus,
-  SimpleManifestSchema,
-  convertSimpleToFullManifest,
+  loadManifest,
 } from '@clawkit/shared';
 import type {
   CheckResult,
@@ -120,6 +117,10 @@ export class DoctorServiceImpl {
         checks.push(this.checkOpenCodeInstalled());
       }
     }
+
+    // 4.3 校验部署和通知配置，避免高级配置被静默忽略
+    checks.push(this.checkDeployConfig(parseResult.manifest));
+    checks.push(this.checkNotifyConfig(parseResult.manifest));
 
     // 5. 检查 repoPath 是否存在
     checks.push(...this.checkRepoPaths(parseResult.manifest));
@@ -608,11 +609,12 @@ export class DoctorServiceImpl {
     validationErrors?: CheckResult[];
     manifest?: Manifest;
   } {
-    // YAML 解析
-    let raw: unknown;
+    let content: string;
     try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      raw = yaml.parse(content);
+      content = fs.readFileSync(filePath, 'utf-8');
+      yaml.parseDocument(content, { strict: true }).errors.forEach((error) => {
+        throw error;
+      });
     } catch (error) {
       return {
         syntaxCheck: {
@@ -623,61 +625,50 @@ export class DoctorServiceImpl {
         },
       };
     }
-
-    // YAML 解析成功
     const syntaxCheck: CheckResult = {
       name: 'YAML 语法检查',
       status: CheckStatus.PASS,
       message: 'YAML 语法正确',
     };
 
-    // 先尝试简化配置 Schema 校验
-    const simpleResult = SimpleManifestSchema.safeParse(raw);
-    if (simpleResult.success) {
+    try {
+      const manifest = loadManifest(filePath);
       return {
         syntaxCheck,
         schemaCheck: {
           name: 'Schema 校验',
           status: CheckStatus.PASS,
-          message: '配置文件符合简化版 Schema 定义',
+          message: '配置文件符合 Schema 定义（支持简化版、V1 和 V2）',
         },
-        manifest: convertSimpleToFullManifest(simpleResult.data) as Manifest,
+        manifest,
       };
-    }
-
-    // 再尝试完整配置 Schema 校验
-    const result = ManifestSchema.safeParse(raw);
-
-    if (!result.success) {
-      const useSimpleErrors = simpleResult.error.issues.length <= result.error.issues.length;
-      const sourceIssues = useSimpleErrors ? simpleResult.error.issues : result.error.issues;
-      const validationErrors: CheckResult[] = sourceIssues.map((issue) => ({
-        name: `Schema 校验 [${issue.path.join('.')}]`,
-        status: CheckStatus.FAIL,
-        message: formatValidationIssue(issue),
-        suggestion: `请检查字段 ${issue.path.join('.')} 的值`,
-      }));
-
+    } catch (error) {
+      const message = (error as Error).message;
+      if (message.includes('YAML')) {
+        return {
+          syntaxCheck: {
+            name: 'YAML 语法检查',
+            status: CheckStatus.FAIL,
+            message,
+            suggestion: '请检查 YAML 格式是否正确，是否有缩进错误或特殊字符',
+          },
+        };
+      }
       return {
         syntaxCheck,
         schemaCheck: {
           name: 'Schema 校验',
           status: CheckStatus.FAIL,
-          message: `配置文件校验失败，共 ${sourceIssues.length} 个错误${useSimpleErrors ? '（按简化配置规则）' : '（按完整配置规则）'}`,
+          message,
         },
-        validationErrors,
+        validationErrors: [{
+          name: 'Schema 校验详情',
+          status: CheckStatus.FAIL,
+          message,
+          suggestion: '请检查 manifest 字段和引用是否正确',
+        }],
       };
     }
-
-    return {
-      syntaxCheck,
-      schemaCheck: {
-        name: 'Schema 校验',
-        status: CheckStatus.PASS,
-        message: '配置文件符合 Schema 定义',
-      },
-      manifest: result.data,
-    };
   }
 
   /**
@@ -797,8 +788,25 @@ export class DoctorServiceImpl {
       usedPorts.get(key)!.push(label);
     };
 
+    const addUrlPort = (url: string | undefined, label: string, node: string, fallback?: number): void => {
+      const port = url ? Number.parseInt(new URL(url).port, 10) : fallback;
+      if (port !== undefined && Number.isInteger(port) && port > 0) addPort(port, label, node);
+    };
+
     // Controller 端口
-    addPort(manifest.services.controller.port, 'Controller', manifest.services.controller.node);
+    addPort(manifest.services.controller.port ?? 8787, 'Controller', manifest.services.controller.node);
+    const controllerUrlPort = manifest.services.controller.publicUrl
+      ? Number.parseInt(new URL(manifest.services.controller.publicUrl).port, 10)
+      : undefined;
+    if (controllerUrlPort && controllerUrlPort !== manifest.services.controller.port) {
+      addPort(controllerUrlPort, 'Controller publicUrl', manifest.services.controller.node);
+    }
+
+    // OpenClaw 与 OpenCode 服务端口
+    addUrlPort(manifest.services.openClaw.publicUrl, 'OpenClaw', manifest.services.openClaw.node, this.openClawLocalPort);
+    if (manifest.services.openCode) {
+      addUrlPort(manifest.services.openCode.publicUrl, 'OpenCode service', manifest.services.openCode.node, this.openCodeLocalPort);
+    }
 
     // Worker 项目端口（只检查配置了独立端口的项目）
     for (const worker of manifest.workers) {
@@ -887,6 +895,23 @@ export class DoctorServiceImpl {
     }
 
     return results;
+  }
+
+  private checkDeployConfig(manifest: Manifest): CheckResult {
+    const deploy = manifest.deploy;
+    if (!deploy) return this.skipCheck('部署策略配置检查', '未配置 deploy，使用默认策略');
+    const health = deploy.healthCheck;
+    if (deploy.timeout < 1 || deploy.retryCount < 0 || (health && health.interval < 1)) {
+      return { name: '部署策略配置检查', status: CheckStatus.FAIL, message: 'deploy 的 timeout、retryCount 或 healthCheck.interval 无效' };
+    }
+    return { name: '部署策略配置检查', status: CheckStatus.PASS, message: `部署策略有效：超时 ${deploy.timeout}s，重试 ${deploy.retryCount} 次` };
+  }
+
+  private checkNotifyConfig(manifest: Manifest): CheckResult {
+    const notify = manifest.notify;
+    if (!notify || !notify.enabled) return this.skipCheck('通知配置检查', '通知未启用');
+    if (notify.channels.length === 0) return { name: '通知配置检查', status: CheckStatus.FAIL, message: '启用通知时至少需要一个渠道' };
+    return { name: '通知配置检查', status: CheckStatus.PASS, message: `通知配置有效：${notify.channels.join('、')}` };
   }
 
   /**

@@ -20,7 +20,7 @@ export { Logger, LogLevel, createLogger } from './logger';
 export type { LoggerConfig } from './logger';
 
 // ============ Manifest 加载工具导出 ============
-export { loadManifest, loadEditableSimpleManifest, detectManifestType, validateSimpleManifest, validateEditableSimpleManifest } from './utils/manifest-loader';
+export { loadManifest, loadEditableSimpleManifest, detectManifestType, validateSimpleManifest, validateEditableSimpleManifest, validateFullManifest } from './utils/manifest-loader';
 
 // ============ Git 工具导出 ============
 export {
@@ -64,6 +64,7 @@ export {
   ProjectV2Schema,
   WorkerV2Schema,
   WorkersV2Schema,
+  ManifestV2Schema,
 } from './schema/manifest-v2';
 export type {
   ExecutorType,
@@ -76,6 +77,7 @@ export type {
   ProjectV2,
   WorkerV2,
   WorkersV2,
+  ManifestV2,
 } from './schema/manifest-v2';
 export { convertV1ToV2, detectManifestVersion } from './schema/manifest-v2-compatibility';
 export type { V1ToV2Options, V1ToV2Result, ConversionWarning } from './schema/manifest-v2-compatibility';

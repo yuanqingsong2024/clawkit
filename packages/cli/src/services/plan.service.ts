@@ -1,10 +1,7 @@
 import * as fs from 'fs';
 import * as yaml from 'yaml';
 import {
-  ManifestSchema,
-  SimpleManifestSchema,
-  convertSimpleToFullManifest,
-  formatValidationIssue,
+  loadManifest as loadSharedManifest,
   StepType,
 } from '@clawkit/shared';
 import type {
@@ -44,32 +41,16 @@ export class PlanServiceImpl {
       return { errors: [`配置文件不存在：${filePath}`] };
     }
 
-    let raw: unknown;
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
-      raw = yaml.parse(content);
+      const document = yaml.parseDocument(content, { strict: true });
+      if (document.errors.length > 0) {
+        throw new Error(`YAML 解析失败：${document.errors[0].message}`);
+      }
+      return { manifest: loadSharedManifest(filePath) };
     } catch (error) {
-      return { errors: [`YAML 解析失败：${(error as Error).message}`] };
+      return { errors: [(error as Error).message] };
     }
-
-    // 先尝试简化配置
-    const simpleResult = SimpleManifestSchema.safeParse(raw);
-    if (simpleResult.success) {
-      // 转换为完整配置
-      const fullManifest = convertSimpleToFullManifest(simpleResult.data);
-      return { manifest: fullManifest };
-    }
-
-    // 再尝试完整配置
-    const fullResult = ManifestSchema.safeParse(raw);
-    if (!fullResult.success) {
-      const errors = fullResult.error.issues.map(
-        (issue) => `字段 [${issue.path.join('.')}]: ${formatValidationIssue(issue)}`,
-      );
-      return { errors };
-    }
-
-    return { manifest: fullResult.data };
   }
 
   /**
@@ -279,6 +260,24 @@ export class PlanServiceImpl {
       node: manifest.services.controller.node,
       implemented: false,
     });
+    const openClawMode = manifest.services.openClaw.deployMode;
+    actions.push({
+      category: openClawMode === 'skip' ? '配置检查' : '服务部署',
+      description: openClawMode === 'local'
+        ? `本地部署 OpenClaw（端口 ${new URL(manifest.services.openClaw.publicUrl).port || 18000}）`
+        : openClawMode === 'external' ? '验证外部 OpenClaw 配置' : '跳过 OpenClaw 部署',
+      node: manifest.services.openClaw.node,
+      implemented: openClawMode === 'skip',
+    });
+    if (manifest.services.openCode) {
+      const mode = manifest.services.openCode.installMode;
+      actions.push({
+        category: mode === 'skip' ? '配置检查' : '服务部署',
+        description: mode === 'local' ? '本地安装 OpenCode' : mode === 'external' ? '验证外部 OpenCode 配置' : '跳过 OpenCode 安装',
+        node: manifest.services.openCode.node,
+        implemented: mode === 'skip',
+      });
+    }
 
     for (const worker of manifest.workers) {
       actions.push({
