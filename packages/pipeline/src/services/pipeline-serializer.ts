@@ -4,6 +4,7 @@
  */
 
 import {
+  NodeType,
   PipelineDefinition,
   PipelineNodeConfig,
   PipelineParameter,
@@ -129,10 +130,10 @@ export class PipelineSerializer {
     // 转换节点
     for (const visualNode of visualData.nodes) {
       const node: PipelineNodeConfig = {
+        ...visualNode.data,
         id: visualNode.id,
         name: visualNode.name,
         type: visualNode.type,
-        ...visualNode.data,
       };
 
       nodes.push(node);
@@ -278,7 +279,7 @@ export class PipelineSerializer {
     return nodes.map(node => ({
       id: (node.id as string) || '',
       name: (node.name as string) || 'Unnamed Node',
-      type: (node.type as string) || 'task',
+      type: (node.type as NodeType) || NodeType.TASK,
       description: node.description as string | undefined,
       executor: node.executor as string | undefined,
       executorConfig: node.executorConfig as Record<string, unknown> | undefined,
@@ -372,7 +373,7 @@ export class PipelineSerializer {
         if (!currentObject) {
           result[key.trim()] = value || '';
         } else {
-          currentObject[key.trim()] = value || '';
+          result[key.trim()] = value || '';
         }
         currentKey = key.trim();
       }

@@ -167,7 +167,7 @@ export class RetryManager {
     return {
       ...this.defaultConfig,
       maxRetries: nodeConfig.retries ?? this.defaultConfig.maxRetries,
-      retryDelay: nodeConfig.retryDelay ?? this.defaultConfig.baseDelay,
+      baseDelay: nodeConfig.retryDelay ?? this.defaultConfig.baseDelay,
       ...customConfig,
     };
   }

@@ -309,6 +309,7 @@ export class PipelineService implements IPipelineService {
       triggerType: trigger,
       status: 'pending',
       createdAt: Date.now(),
+      nodeResults: new Map(),
       stageExecutions: {},
     };
 
