@@ -5,24 +5,6 @@ version: "2.0"
 
 # 项目列表
 projects:
-  # 生产项目 - 需要确认后执行
-  - key: my-production-app
-    path: /path/to/production/app
-    baseBranch: main
-    autoExecute: false  # 需要确认
-    dangerousOps:
-      - delete
-      - drop
-      - rm -rf
-      - truncate
-
-  # 测试项目 - 自动执行
-  - key: my-test-project
-    path: /path/to/test/project
-    baseBranch: develop
-    autoExecute: true  # 自动执行
-    dangerousOps: []
-
   # clawkit 自身项目
   - key: clawkit
     path: .
