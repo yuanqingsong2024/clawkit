@@ -782,10 +782,11 @@ export class DoctorServiceImpl {
     // 收集所有端口
     const addPort = (port: number, label: string, node: string): void => {
       const key = `${node}:${port}`;
-      if (!usedPorts.has(key)) {
-        usedPorts.set(key, []);
+      const labels = usedPorts.get(key) ?? [];
+      if (!labels.includes(label)) {
+        labels.push(label);
       }
-      usedPorts.get(key)!.push(label);
+      usedPorts.set(key, labels);
     };
 
     const addUrlPort = (url: string | undefined, label: string, node: string, fallback?: number): void => {
@@ -804,14 +805,15 @@ export class DoctorServiceImpl {
 
     // OpenClaw 与 OpenCode 服务端口
     addUrlPort(manifest.services.openClaw.publicUrl, 'OpenClaw', manifest.services.openClaw.node, this.openClawLocalPort);
-    if (manifest.services.openCode) {
-      addUrlPort(manifest.services.openCode.publicUrl, 'OpenCode service', manifest.services.openCode.node, this.openCodeLocalPort);
+    const openCodeService = manifest.services.openCode;
+    if (openCodeService) {
+      addUrlPort(openCodeService.publicUrl, 'OpenCode service', openCodeService.node, this.openCodeLocalPort);
     }
 
     // Worker 项目端口（只检查配置了独立端口的项目）
     for (const worker of manifest.workers) {
       for (const project of worker.projects) {
-        if (project.openCode.port) {
+        if (project.openCode.port && project.openCode.port !== this.openCodeLocalPort) {
           addPort(project.openCode.port, `OpenCode [${project.key}]`, worker.node);
         }
       }
