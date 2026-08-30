@@ -3,11 +3,11 @@
  * 提供拖拽式节点编排和可视化流水线设计
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { DAGEditor, type DAGNode } from '../components/pipeline/DAGEditor';
-import { createPipeline, updatePipeline, getPipeline, type PipelineDetail } from '../lib/api';
+import { createPipeline, updatePipeline, getPipeline } from '../lib/api';
 import { v4 as uuidv4 } from 'uuid';
 
 export function PipelineEditorPage(): JSX.Element {
@@ -33,27 +33,25 @@ export function PipelineEditorPage(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
 
-  // 加载已有流水线
-  useState(() => {
+  useEffect(() => {
     if (id) {
-      loadPipeline(id);
+      void loadPipeline(id);
     }
-  });
+  }, [id]);
 
   const loadPipeline = async (pipelineId: string) => {
     try {
       const pipeline = await getPipeline(pipelineId);
       if (pipeline) {
-        setName(pipeline.meta?.name || '');
-        setDescription(pipeline.meta?.description || '');
-        // 将后端格式转换为前端格式
-        const loadedNodes: DAGNode[] = (pipeline.stages || []).map((stage: any, index: number) => ({
-          id: stage.id || `node-${index}`,
-          name: stage.name || '未命名节点',
-          type: (stage.type || 'task') as DAGNode['type'],
-          dependsOn: stage.dependsOn || stage.dependencies || [],
-          config: stage.config || {},
-          position: stage.position || { x: 50 + index * 200, y: 200 },
+        setName(pipeline.name);
+        setDescription(pipeline.description || '');
+        const loadedNodes: DAGNode[] = pipeline.nodes.map((node, index) => ({
+          id: node.id || `node-${index}`,
+          name: node.name || '未命名节点',
+          type: node.type as DAGNode['type'],
+          dependsOn: node.dependsOn || [],
+          config: node.config || {},
+          position: { x: 50 + index * 200, y: 200 },
         }));
         setNodes(loadedNodes.length > 0 ? loadedNodes : [{
           id: 'node-start',
@@ -98,13 +96,13 @@ export function PipelineEditorPage(): JSX.Element {
         await updatePipeline(id, {
           name: name.trim(),
           description: description.trim(),
-          stages,
+          nodes: stages,
         });
       } else {
         await createPipeline({
           name: name.trim(),
           description: description.trim(),
-          stages,
+          nodes: stages,
         });
       }
 
@@ -281,7 +279,7 @@ ${nodes.map(node => `    - id: "${node.id}"
       <div className="flex-1 overflow-hidden">
         {viewMode === 'editor' ? (
           <DAGEditor
-            nodes={nodes}
+            initialNodes={nodes}
             onChange={setNodes}
           />
         ) : (

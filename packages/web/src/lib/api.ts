@@ -155,6 +155,8 @@ export interface PipelineDefinition {
   updatedAt: string;
 }
 
+export type PipelineDetail = PipelineDefinition;
+
 export interface PipelineExecution {
   id: string;
   pipelineId: string;
