@@ -7,43 +7,22 @@ const { buildHttpServer } = require('../packages/controller/dist');
 const { Worker } = require('../packages/worker/dist');
 
 function buildManifest(repoPath) {
-  return `profile:
-  name: "e2e-local-demo"
-  version: "1.0.0"
-  topology: "all-in-one"
-nodes:
-  local:
-    type: "local"
-    workDir: "./.clawkit/e2e"
-services:
-  controller:
-    node: "local"
-    port: 8787
-    apiPrefix: "/api"
-  openClaw:
-    node: "local"
-    publicUrl: "http://127.0.0.1:8787"
-    apiKey: "e2e-local-token"
-workers:
-  - id: "e2e-worker-1"
-    node: "local"
-    connectMode: "pull"
-    tags: ["e2e"]
-    projects:
-      - key: "clawkit"
-        repoPath: "${repoPath.replace(/\\/g, '\\\\')}"
-        baseBranch: "main"
-        openCode:
-          port: 4096
-          agent: "build"
-          mode: "default"
-runtime:
-  promptEngine:
-    mode: "template"
-  memory:
-    enabled: true
-    provider: "local"
-    path: "./data/memory"
+  // Controller 的 ManifestManager 只支持简化配置格式（projects + openClaw.webhookToken），
+  // 因此这里生成简化格式而非 V1 完整格式。
+  return `projects:
+  - key: clawkit
+    path: "${repoPath.replace(/\\/g, '\\\\')}"
+    baseBranch: main
+    autoExecute: false
+    dangerousOps:
+      - delete
+      - drop
+
+openClaw:
+  url: http://127.0.0.1:8787
+  webhookToken: e2e-local-token
+
+openCodeBaseUrl: http://127.0.0.1:4096
 `;
 }
 
@@ -117,7 +96,7 @@ async function main() {
         passwordEnv: 'OPENCODE_SERVER_PASSWORD',
       },
       mode: 'sdk',
-      timeoutMs: 1000,
+      timeoutMs: 5000,
       fallbackToPlaceholder: true,
     },
   });
@@ -211,8 +190,10 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('✗ 单机端到端 demo 失败');
-  console.error(error.stack || error.message);
-  process.exitCode = 1;
-});
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error('✗ 单机端到端 demo 失败');
+    console.error(error.stack || error.message);
+    process.exit(1);
+  });

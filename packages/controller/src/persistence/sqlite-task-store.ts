@@ -43,6 +43,20 @@ export class SqliteTaskStore {
   private initializeSchema(): void {
     const schema = fs.readFileSync(CONTROLLER_SCHEMA_SQL_FILE, 'utf-8');
     this.db.exec(schema);
+    this.ensureTaskDraftsPriorityColumn();
+  }
+
+  /**
+   * 为旧版本遗留的数据库补齐 task_drafts.priority 列。
+   * CREATE TABLE IF NOT EXISTS 不会修改已存在的表，因此升级场景下需要单独迁移。
+   */
+  private ensureTaskDraftsPriorityColumn(): void {
+    const columns = this.db.prepare('PRAGMA table_info(task_drafts)').all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === 'priority')) {
+      this.db.exec(
+        "ALTER TABLE task_drafts ADD COLUMN priority TEXT NOT NULL DEFAULT 'MEDIUM'",
+      );
+    }
   }
 
   // ==================== TaskDraft 操作 ====================

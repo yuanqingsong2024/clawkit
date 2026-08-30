@@ -34,7 +34,16 @@ export class Worker {
   private useSSE = true;
 
   constructor(config?: WorkerConfig) {
-    this.config = config || loadWorkerConfig();
+    const resolvedConfig = config ?? loadWorkerConfig();
+    this.config = {
+      ...resolvedConfig,
+      // 直接传入配置对象时（如 e2e/测试）可能缺失可选字段，这里补齐默认值
+      cliPaths: resolvedConfig.cliPaths ?? {},
+      executors: resolvedConfig.executors,
+      maxConcurrentTasks: resolvedConfig.maxConcurrentTasks ?? 3,
+      heartbeatIntervalMs: resolvedConfig.heartbeatIntervalMs ?? 10000,
+      pollIntervalMs: resolvedConfig.pollIntervalMs ?? 5000,
+    };
     
     // 初始化执行器工厂服务
     this.executorFactoryService = getExecutorFactoryService();
@@ -80,6 +89,7 @@ export class Worker {
           passwordEnv: this.config.openCode.server.passwordEnv,
           timeoutMs: this.config.openCode.timeoutMs,
         },
+        fallbackToPlaceholder: this.config.openCode.fallbackToPlaceholder,
       });
     } catch (error) {
       this.logger.warn(`创建执行器 ${executorType} 失败: ${error}，使用备用执行器`);
@@ -131,6 +141,7 @@ export class Worker {
           }),
           ...(configuredPath ? { binaryPath: configuredPath } : {}),
         },
+        fallbackToPlaceholder: this.config.openCode.fallbackToPlaceholder,
       });
     } catch (error) {
       this.logger.warn(`创建执行器 ${executorType} 失败: ${error}，使用备用执行器`);

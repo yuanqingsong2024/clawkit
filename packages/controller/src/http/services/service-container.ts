@@ -11,6 +11,7 @@ import type { LoadBalancerConfig } from '../../services/load-balancer.interface'
 import { SqliteTaskStore } from '../../persistence/sqlite-task-store';
 import { ControllerApiService } from './controller-api-service';
 import { ClaudeCodeAdapter } from './claude-code-adapter';
+import { OpenClawAdapter } from './openclaw-adapter';
 import { SetupManifestService } from './setup-manifest-service';
 import { SetupOrchestrator } from './setup-orchestrator';
 import { SetupRunService } from './setup-run-service';
@@ -27,6 +28,7 @@ export class ServiceContainer {
   readonly flowService: ControllerFlowServiceImpl;
   readonly apiService: ControllerApiService;
   readonly openClawAdapter: ClaudeCodeAdapter;
+  readonly openclawWebhookAdapter: OpenClawAdapter;
   readonly controllerConfigService: ControllerConfigService;
   readonly projectRegistry: ProjectRegistry;
   readonly manifestManager: ManifestManager | null;
@@ -103,6 +105,7 @@ export class ServiceContainer {
     );
     this.apiService = new ControllerApiService(this.flowService, this.dispatchService, this.workerRegistry);
     this.openClawAdapter = new ClaudeCodeAdapter(this.apiService);
+    this.openclawWebhookAdapter = new OpenClawAdapter(this.apiService);
     this.webConsoleService = new WebConsoleService(
       this.apiService,
       this.workerRegistry,

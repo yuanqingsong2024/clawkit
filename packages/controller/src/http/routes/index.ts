@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 
 import type { ServiceContainer } from '../services/service-container';
 import { buildApprovalRoutes } from './approval-routes';
+import { buildOpenClawRoutes } from './openclaw-routes';
 import { buildDraftsRoutes } from './drafts-routes';
 import { buildHealthRoutes } from './health-routes';
 import { buildNotifyRoutes } from './notify-routes';
@@ -26,6 +27,7 @@ export async function registerApiRoutes(app: FastifyInstance, container: Service
   await app.register(buildTasksRoutes(container.apiService), { prefix: '/api/tasks' });
   await app.register(buildDraftsRoutes(container.apiService), { prefix: '/api/drafts' });
   await app.register(buildApprovalRoutes(container.apiService), { prefix: '/api/approval' });
+  await app.register(buildOpenClawRoutes(container.openclawWebhookAdapter), { prefix: '/api/openclaw' });
   await app.register(buildWorkersRoutes(container.workerRegistry, container.dispatchService), { prefix: '/api/workers' });
   await app.register(buildDispatchesRoutes(container.dispatchService), { prefix: '/api/dispatches' });
   await app.register(buildNotifyRoutes(), { prefix: '/api/notify' });
