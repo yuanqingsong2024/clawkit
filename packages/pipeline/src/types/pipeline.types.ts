@@ -86,6 +86,47 @@ export interface NodeExecutionResult {
 /**
  * 流水线节点配置
  */
+export type PipelineNodeStatus = NodeStatus;
+
+export interface PipelineValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface DAGNode {
+  id: string;
+  inDegree: number;
+  outDegree: number;
+  dependencies: string[];
+  dependents: string[];
+  config: Record<string, unknown>;
+}
+
+export interface DAGGraph {
+  nodes: Map<string, DAGNode>;
+  topologicalOrder: string[];
+  levels: Map<string, number>;
+}
+
+export type { PipelineExecution } from '../models/pipeline.model';
+
+export interface NodeExecutionResponse {
+  success: boolean;
+  nodeId: string;
+  result?: unknown;
+  error?: string;
+  startTime: number;
+  endTime: number;
+  status: PipelineNodeStatus;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: Array<{ type: string; message: string; nodeId?: string; path?: string }>;
+  warnings: Array<{ type: string; message: string; nodeId?: string; path?: string }>;
+}
+
 export interface PipelineNodeConfig {
   /** 节点 ID */
   id: string;
@@ -99,6 +140,7 @@ export interface PipelineNodeConfig {
   executor?: string;
   /** 执行器配置 */
   executorConfig?: Record<string, unknown>;
+  config?: Record<string, unknown>;
   /** 触发器配置 */
   trigger?: {
     type: string;

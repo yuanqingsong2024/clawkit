@@ -4,19 +4,11 @@
  */
 
 import type { PipelineStage, StageStatus } from './stage.model';
+import type { NodeExecutionResponse } from '../types/pipeline.types';
 
 /**
  * 流水线状态
  */
-export type PipelineStatus =
-  | 'draft'      // 草稿
-  | 'ready'      // 就绪
-  | 'running'    // 运行中
-  | 'paused'     // 暂停
-  | 'completed'  // 已完成
-  | 'failed'     // 失败
-  | 'cancelled'; // 已取消
-
 /**
  * 流水线触发器类型
  */
@@ -100,6 +92,7 @@ export interface PipelineExecution {
   triggeredBy?: string;
   /** 执行的节点及其状态 */
   stageExecutions?: Record<string, StageStatus>;
+  nodeResults: Map<string, NodeExecutionResponse>;
   /** 执行上下文 */
   context?: PipelineExecutionContext;
   /** 错误信息 */
