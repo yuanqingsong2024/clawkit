@@ -12,6 +12,7 @@ import {
   PipelineExecutionState,
   PipelineExecutionContext,
   NodeExecutionContext,
+  PipelineStatus,
 } from '../types/pipeline.types';
 
 /**
@@ -327,7 +328,7 @@ export class DAGScheduler {
       executionId: context.executionId,
       pipelineId: pipeline.id,
       pipelineVersion: pipeline.version,
-      status: 'pending',
+      status: PipelineStatus.PENDING,
       nodeStates: new Map(),
       startTime: Date.now(),
     };
@@ -349,12 +350,12 @@ export class DAGScheduler {
   async schedule(): Promise<PipelineExecutionState> {
     // 检测循环依赖
     if (this.graph.hasCycle()) {
-      this.executionState.status = 'failed';
+      this.executionState.status = PipelineStatus.FAILED;
       this.executionState.error = '流水线存在循环依赖';
       return this.executionState;
     }
 
-    this.executionState.status = 'running';
+    this.executionState.status = PipelineStatus.RUNNING;
 
     // 获取并行层级
     if (this.config.enableParallel) {
@@ -547,11 +548,11 @@ export class DAGScheduler {
     this.executionState.duration = this.executionState.endTime - this.executionState.startTime;
 
     if (hasFailed) {
-      this.executionState.status = 'failed';
+      this.executionState.status = PipelineStatus.FAILED;
     } else if (allSkipped) {
-      this.executionState.status = 'success';
+      this.executionState.status = PipelineStatus.SUCCESS;
     } else {
-      this.executionState.status = 'success';
+      this.executionState.status = PipelineStatus.SUCCESS;
     }
   }
 
@@ -559,7 +560,7 @@ export class DAGScheduler {
    * 取消执行
    */
   cancel(): void {
-    this.executionState.status = 'cancelled';
+    this.executionState.status = PipelineStatus.CANCELLED;
     
     // 取消正在运行的节点
     for (const [nodeId, promise] of this.runningNodes) {

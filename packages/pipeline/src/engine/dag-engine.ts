@@ -3,6 +3,7 @@
  * 负责根据依赖关系调度和执行流水线阶段
  */
 
+import { NodeStatus } from '../types/pipeline.types';
 import type { PipelineDefinition, PipelineExecution, PipelineValidationResult, DAGGraph, DAGNode, PipelineNodeStatus } from '../types/pipeline.types';
 import { EventEmitter } from 'events';
 
@@ -273,7 +274,7 @@ export class DAGEngine extends EventEmitter {
       stage,
       inputs: this.collectInputs(stage, stageMap),
       outputs: new Map(),
-      status: 'running',
+      status: NodeStatus.RUNNING,
       startedAt: new Date(),
     };
 
@@ -370,7 +371,7 @@ export class DAGEngine extends EventEmitter {
   private markCompleted(stageId: string, result: StageExecutionResult): void {
     const context = this.executionContexts.get(stageId);
     if (context) {
-      context.status = 'completed';
+      context.status = NodeStatus.SUCCESS;
       context.completedAt = new Date();
       context.outputs.set('result', result.output);
     }
@@ -384,7 +385,7 @@ export class DAGEngine extends EventEmitter {
   private markFailed(stageId: string, result: StageExecutionResult): void {
     const context = this.executionContexts.get(stageId);
     if (context) {
-      context.status = 'failed';
+      context.status = NodeStatus.FAILED;
       context.completedAt = new Date();
       context.error = result.error;
     }
@@ -398,7 +399,7 @@ export class DAGEngine extends EventEmitter {
   private markSkipped(stageId: string): void {
     const context = this.executionContexts.get(stageId);
     if (context) {
-      context.status = 'skipped';
+      context.status = NodeStatus.SKIPPED;
     }
     this.skippedStages.add(stageId);
   }
@@ -430,7 +431,7 @@ export class DAGEngine extends EventEmitter {
     for (const [stageId, context] of this.executionContexts) {
       const outputData = context.outputs.get('result') as { data?: Record<string, unknown>; artifacts?: string[]; duration?: number } | undefined;
       stageResults.set(stageId, {
-        success: context.status === 'completed',
+        success: context.status === NodeStatus.SUCCESS,
         output: outputData,
         error: context.error,
         duration: context.completedAt && context.startedAt
