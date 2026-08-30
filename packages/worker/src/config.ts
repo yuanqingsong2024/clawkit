@@ -27,6 +27,8 @@ export interface WorkerConfig {
   heartbeatIntervalMs: number;
   pollIntervalMs: number;
   maxConcurrentTasks: number;
+  executors?: string[];
+  cliPaths: Record<string, string>;
   manifestPath?: string;
   openCode: WorkerOpenCodeConfig;
 }
@@ -44,6 +46,8 @@ const WorkerConfigSchema = z.object({
   heartbeatIntervalMs: z.number().int().min(1000, '心跳间隔至少 1 秒'),
   pollIntervalMs: z.number().int().min(1000, '轮询间隔至少 1 秒'),
   maxConcurrentTasks: z.number().int().min(1).max(100, '并发任务数不能超过 100'),
+  executors: z.array(z.string()).optional(),
+  cliPaths: z.record(z.string(), z.string()).default({}),
   manifestPath: z.string().optional(),
   openCode: z.object({
     server: z.object({
@@ -71,6 +75,8 @@ export function loadWorkerConfig(): WorkerConfig {
     heartbeatIntervalMs: getEnvNumber('WORKER_HEARTBEAT_INTERVAL_MS', 10000),
     pollIntervalMs: getEnvNumber('WORKER_POLL_INTERVAL_MS', 5000),
     maxConcurrentTasks: getEnvNumber('WORKER_MAX_CONCURRENT_TASKS', 3),
+    executors: getEnvArray('WORKER_EXECUTORS', ',', []),
+    cliPaths: {},
     manifestPath: getEnvString('CLAWKIT_MANIFEST_PATH'),
     openCode: {
       server: {
@@ -79,8 +85,8 @@ export function loadWorkerConfig(): WorkerConfig {
         passwordEnv: getEnvString('OPENCODE_SERVER_PASSWORD_ENV', 'OPENCODE_SERVER_PASSWORD'),
       },
       mode: getEnvString('OPENCODE_EXECUTION_MODE', 'sdk') as 'sdk' | 'cli',
-      timeoutMs: getEnvNumber('OPENCODE_TIMEOUT_MS', 300000)!,
-      fallbackToPlaceholder: getEnvBoolean('WORKER_PLACEHOLDER_FALLBACK', false)!,
+      timeoutMs: getEnvNumber('OPENCODE_TIMEOUT_MS', 300000),
+      fallbackToPlaceholder: getEnvBoolean('WORKER_PLACEHOLDER_FALLBACK', false),
     },
   };
 

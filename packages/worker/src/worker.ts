@@ -40,10 +40,7 @@ export class Worker {
     this.executorFactoryService = getExecutorFactoryService();
     this.executorFactoryService.initialize();
 
-    this.registrationService = new WorkerRegistrationService(
-      this.config,
-      () => this.detectSupportedExecutors(),
-    );
+    this.registrationService = new WorkerRegistrationService(this.config);
     this.heartbeatService = new HeartbeatService(
       this.config,
       () => this.getWorkerStatus(),
@@ -73,7 +70,7 @@ export class Worker {
    * 根据配置选择合适的执行器类型
    */
   private createDefaultExecutor(): TaskExecutor {
-    const executorType = this.config.openCode.mode === 'cli' ? 'claude-code' : 'opencode';
+    const executorType = this.config.openCode?.mode === 'cli' ? 'claude-code' : 'opencode';
     
     try {
       return this.executorFactoryService.createExecutor({
@@ -116,7 +113,8 @@ export class Worker {
     const normalizedType = this.executorFactoryService.normalizeExecutorType(executorType);
 
     // 配置了执行器白名单时，避免任务静默调用未声明的本地 CLI。
-    if ((this.config.executors?.length ?? 0) > 0 && !this.config.executors.some((type) => this.executorFactoryService.normalizeExecutorType(type) === normalizedType)) {
+    const configuredExecutors = this.config.executors ?? [];
+    if (configuredExecutors.length > 0 && !configuredExecutors.some((type) => this.executorFactoryService.normalizeExecutorType(type) === normalizedType)) {
       this.logger.warn(`执行器 ${executorType} 不在 Worker 白名单中，使用备用执行器`);
       return this.fallbackExecutor;
     }
@@ -319,7 +317,6 @@ export class Worker {
             forbiddenActions: [],
             highRiskHandling: 'skip',
           },
-          abortSignal: abortController.signal,
         });
 
         const result = await Promise.race([

@@ -117,6 +117,7 @@ export class OpenCodeExecutorFactory implements ExecutorFactory {
       heartbeatIntervalMs: 10000,
       pollIntervalMs: 5000,
       maxConcurrentTasks: 3,
+      cliPaths: {},
       openCode: {
         server: {
           baseUrl: cfg.baseUrl as string | undefined,
