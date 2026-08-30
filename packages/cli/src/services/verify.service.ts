@@ -207,7 +207,10 @@ export class VerifyService {
     const url = `http://127.0.0.1:${port}/global/health`;
 
     try {
-      const response = this.httpGet(url, 5000);
+      const response = this.httpGet(url, 5000, {
+        username: 'opencode',
+        password: this.readOpenCodePassword(),
+      });
 
       if (response.statusCode === 200) {
         return {
@@ -264,6 +267,11 @@ export class VerifyService {
       message: 'Token 已配置',
       details: `长度: ${apiKey.length} 字符`,
     };
+  }
+
+  private readOpenCodePassword(): string | undefined {
+    const passwordEnv = process.env.OPENCODE_SERVER_PASSWORD_ENV ?? 'OPENCODE_SERVER_PASSWORD';
+    return process.env[passwordEnv];
   }
 
   private resolveOpenCodePort(manifest: Manifest): number {
@@ -351,12 +359,18 @@ export class VerifyService {
   /**
    * HTTP GET 请求（同步方式，使用 curl）
    */
-  private httpGet(url: string, timeoutMs: number): { statusCode: number; body: string } {
+  private httpGet(
+    url: string,
+    timeoutMs: number,
+    auth?: { username: string; password?: string },
+  ): { statusCode: number; body: string } {
     try {
+      const authArgs = auth?.password ? ['-u', `${auth.username}:${auth.password}`] : [];
       const result = spawnSync('curl', [
         '-s',
         '-w', '\n%{http_code}',
         '-m', String(timeoutMs / 1000),
+        ...authArgs,
         url
       ], {
         encoding: 'utf8',

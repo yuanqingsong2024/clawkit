@@ -125,7 +125,7 @@ echo ""
 log_info "按 Ctrl+C 停止服务"
 echo ""
 
-export CLAWKIT_MANIFEST_PATH="${CLAWKIT_MANIFEST_PATH:-$(pwd)/examples/all-in-one.yaml}"
+export CLAWKIT_MANIFEST_PATH="${CLAWKIT_MANIFEST_PATH:-$(pwd)/examples/simple.yaml}"
 export CLAWKIT_MANIFEST_PATH="$(node -e "console.log(require('node:path').resolve(process.argv[1]))" "$CLAWKIT_MANIFEST_PATH")"
 export CONTROLLER_URL="${CONTROLLER_URL:-http://127.0.0.1:8787}"
 export WORKER_ID="${WORKER_ID:-local-worker}"
