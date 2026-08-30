@@ -1,6 +1,6 @@
 {
   "name": "@clawkit/web",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "clawkit 轻量 Web Console",

@@ -1,6 +1,6 @@
 {
   "name": "@clawkit/market",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "ClawKit 插件市场模块",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

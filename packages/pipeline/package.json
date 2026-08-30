@@ -1,6 +1,6 @@
 {
   "name": "@clawkit/pipeline",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "ClawKit 流水线编排模块",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -1,6 +1,6 @@
 {
   "name": "@clawkit/plugin-core",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "ClawKit 插件系统核心模块",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

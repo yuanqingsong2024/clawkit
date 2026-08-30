@@ -1,6 +1,6 @@
 {
   "name": "@clawkit/worker",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "clawkit 工作节点",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
