@@ -419,6 +419,68 @@ export class ControllerFlowServiceImpl implements ControllerFlowService {
       .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
   }
 
+  /**
+   * 分页查询任务列表
+   * 
+   * @param options 分页查询选项
+   * @returns 分页结果
+   */
+  listTasksPaginated(options: {
+    status?: string;
+    projectKey?: string;
+    startDate?: string;
+    endDate?: string;
+    limit: number;
+    offset: number;
+  }): { tasks: TaskListItem[]; total: number } {
+    // 使用数据库分页查询
+    if (this.taskStore) {
+      const { tasks: drafts, total } = this.taskStore.queryTaskDrafts({
+        status: options.status,
+        projectKey: options.projectKey,
+        startDate: options.startDate,
+        endDate: options.endDate,
+        limit: options.limit,
+        offset: options.offset,
+      });
+
+      // 补充关联数据
+      const taskListItems: TaskListItem[] = drafts.map((taskDraft) => {
+        const latestPromptDraft = this.getLatestPromptDraft(taskDraft.taskId);
+        const approvalRecords = this.approvalRecordStore.get(taskDraft.taskId) ?? [];
+
+        return {
+          taskId: taskDraft.taskId,
+          projectKey: taskDraft.projectKey,
+          intent: taskDraft.intent,
+          status: taskDraft.status,
+          priority: taskDraft.priority,
+          createdAt: taskDraft.createdAt,
+          updatedAt: taskDraft.updatedAt,
+          latestPromptDraftSummary: latestPromptDraft?.summaryView ?? null,
+          latestApprovalAction: approvalRecords.length === 0 ? null : approvalRecords[approvalRecords.length - 1],
+          nextStageHint: this.getNextStageHint(taskDraft.status),
+          executionSummary: this.requireTaskMemory(taskDraft.taskId).executionSummary,
+        };
+      });
+
+      return { tasks: taskListItems, total };
+    }
+
+    // 降级到内存分页
+    const allTasks = this.listTasks();
+    const filteredTasks = allTasks.filter(task => {
+      if (options.status && task.status !== options.status) return false;
+      if (options.projectKey && task.projectKey !== options.projectKey) return false;
+      if (options.startDate && new Date(task.createdAt) < new Date(options.startDate)) return false;
+      if (options.endDate && new Date(task.createdAt) > new Date(options.endDate)) return false;
+      return true;
+    });
+
+    const paginatedTasks = filteredTasks.slice(options.offset, options.offset + options.limit);
+    return { tasks: paginatedTasks, total: filteredTasks.length };
+  }
+
   getTaskDetail(taskId: string): TaskDetail {
     return {
       ...this.inspectTask(taskId),

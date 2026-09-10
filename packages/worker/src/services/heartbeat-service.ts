@@ -1,16 +1,20 @@
 import type { WorkerHeartbeatRequest, WorkerStatus } from '@clawkit/shared';
 
 import type { WorkerConfig } from '../config';
+import { ResourceMonitor } from './resource-monitor';
 
 export class HeartbeatService {
   private intervalId?: NodeJS.Timeout;
+  private resourceMonitor: ResourceMonitor;
 
   constructor(
     private config: WorkerConfig,
     private getStatus: () => WorkerStatus,
     private getCurrentTaskId: () => string | undefined,
     private reRegister: () => Promise<void>,
-  ) {}
+  ) {
+    this.resourceMonitor = new ResourceMonitor();
+  }
 
   start(): void {
     if (this.intervalId) {
@@ -35,9 +39,18 @@ export class HeartbeatService {
   }
 
   private async sendHeartbeat(): Promise<void> {
+    const resourceUsage = this.resourceMonitor.getResourceUsage();
+
+    // 检查是否触发告警
+    const alerts = this.resourceMonitor.checkAlerts(resourceUsage);
+    if (alerts.length > 0) {
+      console.warn('资源告警:', alerts.join('; '));
+    }
+
     const request: WorkerHeartbeatRequest = {
       status: this.getStatus(),
       currentTaskId: this.getCurrentTaskId(),
+      resourceUsage,
     };
 
     let response = await fetch(

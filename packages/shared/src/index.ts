@@ -16,7 +16,7 @@ export { getEnvString, getEnvNumber, getEnvBoolean, getEnvArray, validateConfig 
 export type { ConfigSource, ConfigLoadResult } from './config';
 
 // ============ 日志工具导出 ============
-export { Logger, LogLevel, createLogger } from './logger';
+export { Logger, LogLevel, createLogger, generateRequestId } from './logger';
 export type { LoggerConfig } from './logger';
 
 // ============ Manifest 加载工具导出 ============
@@ -40,7 +40,7 @@ export { getApprovalPolicyService } from './services/approval-policy-service';
 export type { ApprovalPolicyService, ApprovalDecision } from './services/approval-policy-service';
 
 // ============ 工具函数导出 ============
-export { getErrorMessage } from './i18n/error-messages';
+export { getErrorMessage, getErrorDocUrl } from './i18n/error-messages';
 
 // ============ 类型导出 ============
 export type * from './types/manifest';

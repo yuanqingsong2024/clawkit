@@ -1,4 +1,4 @@
-import { ControllerErrorCode, getErrorMessage } from '@clawkit/shared';
+import { ControllerErrorCode, getErrorMessage, getErrorDocUrl } from '@clawkit/shared';
 
 export class HttpError extends Error {
   readonly statusCode: number;
@@ -6,6 +6,7 @@ export class HttpError extends Error {
   readonly details: unknown;
   readonly userMessage?: string;
   readonly suggestion?: string;
+  readonly docUrl?: string;
 
   constructor(options: {
     statusCode: number;
@@ -23,6 +24,9 @@ export class HttpError extends Error {
       const friendlyError = getErrorMessage(options.errorCode as ControllerErrorCode, options.message);
       this.userMessage = friendlyError.message;
       this.suggestion = friendlyError.suggestion;
+      this.docUrl = friendlyError.docUrl;
+    } else {
+      this.docUrl = getErrorDocUrl(options.errorCode as ControllerErrorCode);
     }
   }
 
@@ -32,6 +36,7 @@ export class HttpError extends Error {
       errorCode: this.errorCode,
       message: this.userMessage || this.message,
       suggestion: this.suggestion,
+      docUrl: this.docUrl,
       details: this.details,
       technical: this.userMessage ? this.message : undefined,
     };

@@ -87,11 +87,15 @@ function getActionClassName(action: TaskActionType): string {
     case 'approve':
       return `${compactButtonClassName} bg-slate-900 px-2.5 text-[11px] text-white hover:bg-slate-800`;
     case 'cancel':
-      return `${compactButtonClassName} bg-rose-600 px-2.5 text-[11px] text-white hover:bg-rose-500`;
+      return `${compactButtonClassName} bg-rose-600 px-2.5 text-[11px] text-white hover:bg-rose-500 font-medium`;
     case 'revise':
     default:
       return `${compactButtonClassName} border border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:bg-slate-50`;
   }
+}
+
+function isDangerousAction(action: TaskActionType): boolean {
+  return action === 'cancel';
 }
 
 function getNextStageClassName(status: string): string {
@@ -666,7 +670,13 @@ export function TasksPage(): JSX.Element {
       <Modal isOpen={pendingAction !== null} onClose={closeActionDialog} title={actionDialogTitle} size="sm">
         {pendingAction ? (
           <div className="space-y-4">
-            <p className="text-sm text-slate-600">{actionDialogMessage}</p>
+            {isDangerousAction(pendingAction.action) ? (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                ⚠️ 此操作不可撤销，取消后任务将不会继续派发执行。
+              </div>
+            ) : (
+              <p className="text-sm text-slate-600">{actionDialogMessage}</p>
+            )}
             <div className="space-y-3">
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">操作者（operator）</label>
@@ -698,8 +708,13 @@ export function TasksPage(): JSX.Element {
               <button type="button" onClick={closeActionDialog} className={secondaryButtonClassName} disabled={isActionBusy}>
                 取消
               </button>
-              <button type="button" onClick={submitAction} className={primaryButtonClassName} disabled={!canSubmitAction}>
-                {actionMutation.isPending ? '提交中…' : '确认'}
+              <button
+                type="button"
+                onClick={submitAction}
+                className={`${primaryButtonClassName} ${isDangerousAction(pendingAction.action) ? 'bg-rose-600 hover:bg-rose-500' : ''}`.trim()}
+                disabled={!canSubmitAction}
+              >
+                {actionMutation.isPending ? '提交中…' : isDangerousAction(pendingAction.action) ? '确认取消' : '确认'}
               </button>
             </div>
 

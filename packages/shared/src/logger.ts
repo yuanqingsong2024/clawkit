@@ -1,11 +1,13 @@
+import pino, { Logger as PinoLogger, LoggerOptions as PinoLoggerOptions } from 'pino';
+
 /**
- * 日志级别
+ * 日志级别枚举（与 pino 兼容）
  */
 export enum LogLevel {
-  DEBUG = 0,
-  INFO = 1,
-  WARN = 2,
-  ERROR = 3,
+  DEBUG = 'debug',
+  INFO = 'info',
+  WARN = 'warn',
+  ERROR = 'error',
 }
 
 /**
@@ -16,142 +18,156 @@ export interface LoggerConfig {
   service: string;
   enableTimestamp?: boolean;
   enableColors?: boolean;
+  jsonFormat?: boolean;
+}
+
+const LOG_LEVEL_MAP: Record<string, pino.Level> = {
+  DEBUG: 'debug',
+  INFO: 'info',
+  WARN: 'warn',
+  ERROR: 'error',
+};
+
+/**
+ * 敏感信息脱敏
+ */
+function redactMeta(meta: Record<string, unknown>): Record<string, unknown> {
+  const sensitiveKeys = new Set([
+    'authorization', 'Authorization', 'bearer', 'Bearer',
+    'token', 'Token', 'cookie', 'Cookie',
+    'set-cookie', 'Set-Cookie', 'x-api-key', 'X-API-Key',
+    'x-auth-token', 'X-Auth-Token', 'password', 'Password',
+    'secret', 'Secret', 'apiKey', 'api_key', 'API_KEY',
+  ]);
+
+  const redactValue = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      return value.map(item => redactValue(item));
+    }
+
+    if (value !== null && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      const output: Record<string, unknown> = {};
+
+      for (const [key, nestedValue] of Object.entries(record)) {
+        output[key] = sensitiveKeys.has(key) ? '***' : redactValue(nestedValue);
+      }
+
+      return output;
+    }
+
+    return value;
+  };
+
+  return redactValue(meta) as Record<string, unknown>;
 }
 
 /**
- * 轻量日志工具
+ * 结构化日志工具
  * 
- * 提供基本的日志级别控制和格式化，避免引入重量级日志库
+ * 基于 pino 的生产级日志实现，支持：
+ * - JSON 格式输出（便于日志收集）
+ * - 日志级别控制
+ * - 请求追踪（requestId）
+ * - 敏感信息脱敏
  */
 export class Logger {
-  private config: LoggerConfig;
+  private pinoLogger: PinoLogger;
+  private service: string;
+  private jsonFormat: boolean;
 
   constructor(config: LoggerConfig) {
-    this.config = {
-      enableTimestamp: true,
-      enableColors: false,
-      ...config,
-    };
-  }
+    this.service = config.service;
+    this.jsonFormat = config.jsonFormat ?? process.env.LOG_JSON === 'true';
 
-  /**
-   * 格式化日志消息
-   */
-  private format(level: string, message: string, meta?: Record<string, unknown>): string {
-    const parts: string[] = [];
-
-    if (this.config.enableTimestamp) {
-      parts.push(`[${new Date().toISOString()}]`);
-    }
-
-    parts.push(`[${this.config.service}]`);
-    parts.push(`[${level}]`);
-    parts.push(message);
-
-    if (meta && Object.keys(meta).length > 0) {
-      parts.push(JSON.stringify(this.redactMeta(meta)));
-    }
-
-    return parts.join(' ');
-  }
-
-  /**
-   * 对日志元数据做最小脱敏，避免把 token、Cookie、Authorization 等敏感头直接打出来。
-   */
-  private redactMeta(meta: Record<string, unknown>): Record<string, unknown> {
-    const sensitiveKeys = new Set([
-      'authorization',
-      'Authorization',
-      'bearer',
-      'Bearer',
-      'token',
-      'Token',
-      'cookie',
-      'Cookie',
-      'set-cookie',
-      'Set-Cookie',
-      'x-api-key',
-      'X-API-Key',
-      'x-auth-token',
-      'X-Auth-Token',
-    ]);
-
-    const redactValue = (value: unknown): unknown => {
-      if (Array.isArray(value)) {
-        return value.map((item) => redactValue(item));
-      }
-
-      if (value !== null && typeof value === 'object') {
-        const record = value as Record<string, unknown>;
-        const output: Record<string, unknown> = {};
-
-        for (const [key, nestedValue] of Object.entries(record)) {
-          output[key] = sensitiveKeys.has(key) ? '***' : redactValue(nestedValue);
-        }
-
-        return output;
-      }
-
-      return value;
+    const level = LOG_LEVEL_MAP[config.level] ?? pino.levels.values.info;
+    
+    const options: PinoLoggerOptions = {
+      level,
+      base: {
+        service: config.service,
+      },
+      timestamp: pino.stdTimeFunctions.isoTime,
     };
 
-    return redactValue(meta) as Record<string, unknown>;
-  }
-
-  /**
-   * 检查日志级别是否启用
-   */
-  private isLevelEnabled(level: LogLevel): boolean {
-    return level >= this.config.level;
+    if (!this.jsonFormat && process.env.NODE_ENV !== 'production') {
+      this.pinoLogger = pino({
+        ...options,
+        transport: {
+          target: 'pino-pretty',
+          options: {
+            colorize: config.enableColors ?? false,
+            translateTime: 'SYS:standard',
+            ignore: 'pid,hostname',
+          },
+        },
+      });
+    } else {
+      this.pinoLogger = pino(options);
+    }
   }
 
   /**
    * DEBUG 级别日志
    */
   debug(message: string, meta?: Record<string, unknown>): void {
-    if (this.isLevelEnabled(LogLevel.DEBUG)) {
-      console.debug(this.format('DEBUG', message, meta));
-    }
+    this.pinoLogger.debug(redactMeta(meta ?? {}), message);
   }
 
   /**
    * INFO 级别日志
    */
   info(message: string, meta?: Record<string, unknown>): void {
-    if (this.isLevelEnabled(LogLevel.INFO)) {
-      console.info(this.format('INFO', message, meta));
-    }
+    this.pinoLogger.info(redactMeta(meta ?? {}), message);
   }
 
   /**
    * WARN 级别日志
    */
   warn(message: string, meta?: Record<string, unknown>): void {
-    if (this.isLevelEnabled(LogLevel.WARN)) {
-      console.warn(this.format('WARN', message, meta));
-    }
+    this.pinoLogger.warn(redactMeta(meta ?? {}), message);
   }
 
   /**
    * ERROR 级别日志
    */
   error(message: string, error?: Error | unknown, meta?: Record<string, unknown>): void {
-    if (this.isLevelEnabled(LogLevel.ERROR)) {
-      const errorMeta = error instanceof Error
-        ? { error: error.message, stack: error.stack, ...meta }
-        : { error: String(error), ...meta };
-      console.error(this.format('ERROR', message, errorMeta));
-    }
+    const errorMeta = error instanceof Error
+      ? { error: { message: error.message, stack: error.stack }, ...meta }
+      : error ? { error: String(error), ...meta } : meta;
+    
+    this.pinoLogger.error(redactMeta(errorMeta ?? {}), message);
   }
 
   /**
    * 创建子 Logger（继承配置，但可指定不同的 service 名称）
    */
   child(service: string): Logger {
-    return new Logger({
-      ...this.config,
-      service: `${this.config.service}:${service}`,
+    const childPino = this.pinoLogger.child({ service: `${this.service}:${service}` });
+    
+    const childLogger = Object.create(this, {
+      pinoLogger: { value: childPino },
+      service: { value: `${this.service}:${service}` },
+      jsonFormat: { value: this.jsonFormat },
     });
+    
+    return childLogger as unknown as Logger;
+  }
+
+  /**
+   * 创建带 requestId 的 Logger
+   * 用于请求追踪
+   */
+  withRequestId(requestId: string): Logger {
+    const childPino = this.pinoLogger.child({ requestId });
+    
+    const childLogger = Object.create(this, {
+      pinoLogger: { value: childPino },
+      service: { value: this.service },
+      jsonFormat: { value: this.jsonFormat },
+    });
+    
+    return childLogger as unknown as Logger;
   }
 }
 
@@ -159,13 +175,22 @@ export class Logger {
  * 从环境变量创建 Logger
  */
 export function createLogger(service: string): Logger {
-  const levelStr = process.env.LOG_LEVEL?.toUpperCase() || 'INFO';
-  const level = LogLevel[levelStr as keyof typeof LogLevel] ?? LogLevel.INFO;
+  const levelStr = (process.env.LOG_LEVEL || 'INFO').toUpperCase();
+  const level = LOG_LEVEL_MAP[levelStr] as LogLevel ?? LogLevel.INFO;
+  const jsonFormat = process.env.LOG_JSON === 'true';
 
   return new Logger({
     service,
     level,
+    jsonFormat,
     enableTimestamp: true,
     enableColors: false,
   });
+}
+
+/**
+ * 生成请求 ID
+ */
+export function generateRequestId(): string {
+  return `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 }

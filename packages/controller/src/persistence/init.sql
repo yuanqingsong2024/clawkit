@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS task_drafts (
   status TEXT NOT NULL,
   priority TEXT NOT NULL DEFAULT 'MEDIUM',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  execution_timeout_ms INTEGER,
+  max_retries INTEGER DEFAULT 0
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS task_memories (
@@ -55,6 +57,20 @@ CREATE TABLE IF NOT EXISTS approval_records (
 
 CREATE INDEX IF NOT EXISTS idx_task_drafts_status
   ON task_drafts(status);
+
+CREATE INDEX IF NOT EXISTS idx_task_drafts_project_key
+  ON task_drafts(project_key);
+
+CREATE INDEX IF NOT EXISTS idx_task_drafts_created_at
+  ON task_drafts(created_at DESC);
+
+-- 复合索引：支持 status + created_at 组合查询（最常见查询模式）
+CREATE INDEX IF NOT EXISTS idx_task_drafts_status_created
+  ON task_drafts(status, created_at DESC);
+
+-- 复合索引：支持 project_key + created_at 组合查询
+CREATE INDEX IF NOT EXISTS idx_task_drafts_project_created
+  ON task_drafts(project_key, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_approval_records_task_id
   ON approval_records(task_id);

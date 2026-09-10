@@ -398,6 +398,20 @@ export class ControllerApiService {
     };
   }
 
+  /**
+   * 分页查询任务列表
+   */
+  listTasksPaginated(options: {
+    status?: string;
+    projectKey?: string;
+    startDate?: string;
+    endDate?: string;
+    limit: number;
+    offset: number;
+  }): { tasks: TaskListItem[]; total: number } {
+    return this.flowService.listTasksPaginated(options);
+  }
+
   getTaskDetail(taskId: string): TaskDetail {
     this.ensureTaskId(taskId);
 

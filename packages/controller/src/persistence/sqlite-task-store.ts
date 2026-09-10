@@ -57,6 +57,12 @@ export class SqliteTaskStore {
         "ALTER TABLE task_drafts ADD COLUMN priority TEXT NOT NULL DEFAULT 'MEDIUM'",
       );
     }
+    if (!columns.some((column) => column.name === 'execution_timeout_ms')) {
+      this.db.exec('ALTER TABLE task_drafts ADD COLUMN execution_timeout_ms INTEGER');
+    }
+    if (!columns.some((column) => column.name === 'max_retries')) {
+      this.db.exec('ALTER TABLE task_drafts ADD COLUMN max_retries INTEGER DEFAULT 0');
+    }
   }
 
   // ==================== TaskDraft 操作 ====================
@@ -69,8 +75,9 @@ export class SqliteTaskStore {
       INSERT OR REPLACE INTO task_drafts (
         task_id, source_text, project_key, intent,
         constraints_json, acceptance_criteria_json,
-        status, priority, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        status, priority, created_at, updated_at,
+        execution_timeout_ms, max_retries
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -83,7 +90,9 @@ export class SqliteTaskStore {
       draft.status,
       draft.priority,
       draft.createdAt.toISOString(),
-      draft.updatedAt.toISOString()
+      draft.updatedAt.toISOString(),
+      draft.executionTimeoutMs ?? null,
+      draft.maxRetries ?? 0,
     );
   }
 
@@ -135,6 +144,109 @@ export class SqliteTaskStore {
     stmt.run(taskId);
   }
 
+  /**
+   * 取消任务草稿
+   * 将任务状态更新为 cancelled（仅当任务处于可取消状态时）
+   * 
+   * @param taskId 任务ID
+   * @returns 是否成功取消
+   */
+  cancelTaskDraft(taskId: string): boolean {
+    // 只允许取消以下状态的任务
+    const cancellableStatuses = ['draft', 'approved', 'pending_dispatch', 'dispatching'];
+    
+    const stmt = this.db.prepare(`
+      UPDATE task_drafts 
+      SET status = 'cancelled', updated_at = ?
+      WHERE task_id = ? AND status IN (${cancellableStatuses.map(() => '?').join(', ')})
+    `);
+    
+    const result = stmt.run(
+      new Date().toISOString(),
+      taskId,
+      ...cancellableStatuses
+    );
+    
+    return result.changes > 0;
+  }
+
+  /**
+   * 获取任务草稿的可取消状态
+   */
+  canCancelTaskDraft(taskId: string): boolean {
+    const cancellableStatuses = ['draft', 'approved', 'pending_dispatch', 'dispatching'];
+    
+    const stmt = this.db.prepare(`
+      SELECT status FROM task_drafts WHERE task_id = ?
+    `);
+    
+    const row = stmt.get(taskId) as any;
+    if (!row) return false;
+    
+    return cancellableStatuses.includes(row.status);
+  }
+
+  /**
+   * 查询任务草稿（支持分页和过滤）
+   * 
+   * @param options 查询选项
+   * @returns 分页结果
+   */
+  queryTaskDrafts(options: {
+    status?: string;
+    projectKey?: string;
+    startDate?: string;
+    endDate?: string;
+    limit: number;
+    offset: number;
+  }): { tasks: TaskDraft[]; total: number } {
+    const { status, projectKey, startDate, endDate, limit, offset } = options;
+    
+    // 构建 WHERE 条件
+    const conditions: string[] = [];
+    const params: any[] = [];
+    
+    if (status) {
+      conditions.push('status = ?');
+      params.push(status);
+    }
+    
+    if (projectKey) {
+      conditions.push('project_key = ?');
+      params.push(projectKey);
+    }
+    
+    if (startDate) {
+      conditions.push('created_at >= ?');
+      params.push(startDate);
+    }
+    
+    if (endDate) {
+      conditions.push('created_at <= ?');
+      params.push(endDate);
+    }
+    
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    
+    // 查询总数
+    const countStmt = this.db.prepare(`SELECT COUNT(*) as count FROM task_drafts ${whereClause}`);
+    const countResult = countStmt.get(...params) as { count: number };
+    const total = countResult.count;
+    
+    // 查询分页数据
+    const dataStmt = this.db.prepare(`
+      SELECT * FROM task_drafts ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    `);
+    const rows = dataStmt.all(...params, limit, offset) as any[];
+    
+    return {
+      tasks: rows.map(row => this.rowToTaskDraft(row)),
+      total,
+    };
+  }
+
   private rowToTaskDraft(row: any): TaskDraft {
     return {
       taskId: row.task_id,
@@ -147,6 +259,8 @@ export class SqliteTaskStore {
       priority: row.priority as TaskPriority,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
+      executionTimeoutMs: row.execution_timeout_ms ?? undefined,
+      maxRetries: row.max_retries ?? undefined,
     };
   }
 

@@ -279,6 +279,7 @@ export class DispatchService {
     const projectConfig = this.requireProjectConfig(taskDraft.projectKey);
     const compiled = this.requireCompiledPrompt(taskId);
     const executionBoundary = this.buildExecutionBoundary();
+    const defaultTimeoutMs = 30 * 60 * 1000;
 
     this.taskStatusUpdater.updateTaskStatus(taskId, TaskStatus.RUNNING);
     this.markExecutionSummary(taskId, {
@@ -309,6 +310,8 @@ export class DispatchService {
         executionPrompt: compiled.executionVersion,
         outputContract: compiled.outputContract,
         executionBoundary,
+        executionTimeoutMs: taskDraft.executionTimeoutMs ?? defaultTimeoutMs,
+        maxRetries: taskDraft.maxRetries ?? 0,
       },
     };
   }

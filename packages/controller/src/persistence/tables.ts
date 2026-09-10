@@ -12,6 +12,10 @@ export const CONTROLLER_TABLES = {
 
 export const CONTROLLER_INDEXES = {
   TASK_DRAFTS_STATUS: 'idx_task_drafts_status',
+  TASK_DRAFTS_PROJECT_KEY: 'idx_task_drafts_project_key',
+  TASK_DRAFTS_CREATED_AT: 'idx_task_drafts_created_at',
+  TASK_DRAFTS_STATUS_CREATED: 'idx_task_drafts_status_created',
+  TASK_DRAFTS_PROJECT_CREATED: 'idx_task_drafts_project_created',
   PROMPT_DRAFTS_TASK_ID: 'idx_prompt_drafts_task_id',
   PROMPT_DRAFTS_TASK_VERSION: 'idx_prompt_drafts_task_version',
   APPROVAL_RECORDS_TASK_ID: 'idx_approval_records_task_id',

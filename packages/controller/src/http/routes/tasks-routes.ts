@@ -7,6 +7,12 @@ interface IngestTaskBody {
   text: string;
 }
 
+interface CancelTaskBody {
+  operator?: string;
+  comment?: string;
+  force?: boolean;
+}
+
 interface TasksQueryParams {
   page?: string;
   pageSize?: string;
@@ -23,43 +29,31 @@ export function buildTasksRoutes(apiService: ControllerApiService): FastifyPlugi
       
       const pageNum = parseInt(page, 10);
       const pageSizeNum = parseInt(pageSize, 10);
-      
-      let allTasks = apiService.listTasks().tasks;
-      
-      if (status) {
-        allTasks = allTasks.filter(task => task.status === status);
-      }
-      
-      if (projectKey) {
-        allTasks = allTasks.filter(task => task.projectKey === projectKey);
-      }
-      
-      if (startDate) {
-        const start = new Date(startDate);
-        allTasks = allTasks.filter(task => new Date(task.createdAt) >= start);
-      }
-      
-      if (endDate) {
-        const end = new Date(endDate);
-        allTasks = allTasks.filter(task => new Date(task.createdAt) <= end);
-      }
-      
-      const total = allTasks.length;
-      const totalPages = Math.ceil(total / pageSizeNum);
-      const startIndex = (pageNum - 1) * pageSizeNum;
-      const endIndex = startIndex + pageSizeNum;
-      const paginatedTasks = allTasks.slice(startIndex, endIndex);
-      
+      const offset = (pageNum - 1) * pageSizeNum;
+
+      // 使用数据库级分页
+      const result = apiService.listTasksPaginated({
+        status,
+        projectKey,
+        startDate,
+        endDate,
+        limit: pageSizeNum,
+        offset,
+      });
+
+      const totalPages = Math.ceil(result.total / pageSizeNum);
+
       sendSuccess(reply, {
         code: 'controller.tasks.list_fetched',
         message: '任务列表查询成功',
         data: {
-          tasks: paginatedTasks,
+          tasks: result.tasks,
           pagination: {
             page: pageNum,
             pageSize: pageSizeNum,
-            total,
+            total: result.total,
             totalPages,
+            hasMore: pageNum < totalPages,
           },
         },
       });
@@ -95,6 +89,25 @@ export function buildTasksRoutes(apiService: ControllerApiService): FastifyPlugi
         code: 'controller.tasks.detail_fetched',
         message: '任务详情查询成功',
         data: detail,
+      });
+    });
+
+    // 取消任务
+    app.post<{ Params: { taskId: string }; Body: CancelTaskBody }>('/:taskId/cancel', async (request, reply) => {
+      const { taskId } = request.params;
+      const { operator = 'web-console', comment, force = false } = request.body ?? {};
+
+      const cancelled = apiService.cancelTask(taskId, operator, comment);
+      sendSuccess(reply, {
+        code: 'controller.tasks.cancelled',
+        message: '任务已取消',
+        data: {
+          taskId: cancelled.taskId,
+          status: cancelled.status,
+          cancelledAt: new Date().toISOString(),
+          nextStageHint: cancelled.nextStageHint,
+          force,
+        },
       });
     });
   };

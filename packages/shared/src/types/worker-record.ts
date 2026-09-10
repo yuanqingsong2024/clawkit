@@ -89,6 +89,44 @@ export interface WorkerHeartbeatRequest {
   status: WorkerStatus;
   /** 当前正在执行的任务 ID（如果有） */
   currentTaskId?: string;
+  /** 资源使用情况（可选） */
+  resourceUsage?: WorkerResourceUsage;
+}
+
+/**
+ * Worker 资源使用情况
+ */
+export interface WorkerResourceUsage {
+  /** CPU 使用率（百分比，0-100） */
+  cpuPercent: number;
+  /** 内存使用量（字节） */
+  memoryUsedBytes: number;
+  /** 内存总量（字节） */
+  memoryTotalBytes: number;
+  /** 内存使用率（百分比，0-100） */
+  memoryPercent: number;
+  /** 磁盘使用量（字节） */
+  diskUsedBytes?: number;
+  /** 磁盘总量（字节） */
+  diskTotalBytes?: number;
+  /** 磁盘使用率（百分比，0-100） */
+  diskPercent?: number;
+  /** Worker 启动时间（秒） */
+  uptimeSeconds: number;
+  /** 采集时间戳 */
+  timestamp: string;
+}
+
+/**
+ * 资源告警阈值配置
+ */
+export interface ResourceAlertThresholds {
+  /** CPU 告警阈值（百分比） */
+  cpuPercent?: number;
+  /** 内存告警阈值（百分比） */
+  memoryPercent?: number;
+  /** 磁盘告警阈值（百分比） */
+  diskPercent?: number;
 }
 
 /**

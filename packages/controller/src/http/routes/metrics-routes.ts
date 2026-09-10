@@ -1,9 +1,13 @@
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 
+import { register, collectDefaultMetrics } from 'prom-client';
 import { sendSuccess } from '../types/api-response';
 import type { MetricsCollector } from '../../metrics/metrics-collector';
 import type { AlertRulesEngine } from '../../metrics/alert-rules';
 import type { AlertNotificationService } from '../../metrics/alert-notifiers';
+
+// 收集默认指标（进程信息、内存等）
+collectDefaultMetrics();
 
 /**
  * 指标服务上下文
@@ -20,6 +24,12 @@ export interface MetricsServiceContext {
 export function buildMetricsRoutes(context: MetricsServiceContext): FastifyPluginAsync {
   return async (app: FastifyInstance): Promise<void> => {
     const { metricsCollector, alertRulesEngine, notificationService } = context;
+
+    // Prometheus 指标端点（必须在 /api/metrics 之前注册以避免路由冲突）
+    app.get('/api/metrics/prometheus', async (_request, reply) => {
+      reply.header('Content-Type', register.contentType);
+      return register.metrics();
+    });
 
     // 获取当前指标快照
     app.get('/', async (_request, reply) => {

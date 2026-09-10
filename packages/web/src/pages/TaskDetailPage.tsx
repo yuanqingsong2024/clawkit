@@ -708,6 +708,20 @@ export function TaskDetailPage(): JSX.Element {
         cancelLabel="返回"
       />
 
+      {/* 取消任务确认 */}
+      <ConfirmDialog
+        isOpen={showCancelConfirm}
+        onClose={() => setShowCancelConfirm(false)}
+        onConfirm={() => {
+          cancelMutation.mutate({ operator: operator.trim() });
+        }}
+        title="确认取消任务"
+        message={`确定要取消任务 ${taskId} 吗？取消后将不会继续派发执行。`}
+        confirmLabel="确认取消"
+        cancelLabel="返回"
+        danger
+      />
+
       {/* 删除任务确认 */}
       <ConfirmDialog
         isOpen={showDeleteConfirm}
