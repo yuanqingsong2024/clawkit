@@ -25,8 +25,8 @@ export function buildMetricsRoutes(context: MetricsServiceContext): FastifyPlugi
   return async (app: FastifyInstance): Promise<void> => {
     const { metricsCollector, alertRulesEngine, notificationService } = context;
 
-    // Prometheus 指标端点（必须在 /api/metrics 之前注册以避免路由冲突）
-    app.get('/api/metrics/prometheus', async (_request, reply) => {
+    // Prometheus 指标端点
+    app.get('/prometheus', async (_request, reply) => {
       reply.header('Content-Type', register.contentType);
       return register.metrics();
     });
