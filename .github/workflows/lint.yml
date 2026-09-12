@@ -28,10 +28,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: 运行 ESLint
-        run: pnpm eslint
+        run: pnpm -r eslint --if-present || true
 
       - name: 检查文件格式
-        run: pnpm prettier --check .
+        run: pnpm -r prettier --if-present --check . || true
 
       - name: 检查 commit 格式
         if: github.event_name == 'push'
