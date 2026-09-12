@@ -1,4 +1,4 @@
-import fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import fastify, { type FastifyInstance, FastifyServerOptions } from 'fastify';
 
 import { registerWebConsoleStatic } from './register-web-console-static';
 import { registerErrorHandler } from './errors/error-handler';
