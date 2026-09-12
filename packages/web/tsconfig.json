@@ -11,6 +11,8 @@
     "noEmit": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "types": ["vite/client"],
     "forceConsistentCasingInFileNames": true
   },
