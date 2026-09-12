@@ -7,7 +7,7 @@
     "build": "pnpm -r build",
     "clean": "pnpm -r clean",
     "dev": "pnpm -r --if-present --filter \"!@clawkit/desktop\" dev",
-    "lint": "pnpm -r lint",
+    "lint": "pnpm -r --if-present lint",
     "test": "pnpm -r --if-present test",
     "desktop:dev": "pnpm --filter @clawkit/desktop dev",
     "desktop:build": "pnpm --filter @clawkit/desktop build",
