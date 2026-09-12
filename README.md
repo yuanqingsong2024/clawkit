@@ -377,6 +377,8 @@ bash ./scripts/restart-real-stack.sh
 按使用场景建议优先阅读这些文档：
 
 - [`docs/quick-start.md`](./docs/quick-start.md)：一键部署与快速上手
+- [`docs/user-guide.md`](./docs/user-guide.md)：完整使用指南（快速开始、CLI 命令、部署拓扑、任务流程）
+- [`docs/flowcharts.md`](./docs/flowcharts.md)：核心流程图（Mermaid 格式，可直接渲染）
 - [`docs/simplified-quick-start.md`](./docs/simplified-quick-start.md)：简化配置快速开始
 - [`docs/cli.md`](./docs/cli.md)：CLI 命令说明
 - [`docs/manifest.md`](./docs/manifest.md)：manifest 结构与字段说明
