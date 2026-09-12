@@ -64,7 +64,14 @@ jobs:
           echo "✅ 版本号一致"
       
       - name: 类型检查
-        run: pnpm lint
+        run: |
+          pnpm --filter @clawkit/cli lint
+          pnpm --filter @clawkit/controller lint
+          pnpm --filter @clawkit/desktop lint
+          pnpm --filter @clawkit/plugin-core lint
+          pnpm --filter @clawkit/shared lint
+          pnpm --filter @clawkit/web lint
+          pnpm --filter @clawkit/worker lint
       
       - name: 构建所有包
         run: pnpm build
