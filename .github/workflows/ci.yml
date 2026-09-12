@@ -63,16 +63,11 @@ jobs:
           fi
           echo "✅ 版本号一致"
        
-      - name: 构建所有包
+      - name: 构建核心包
         run: |
-          pnpm --filter @clawkit/cli build
           pnpm --filter @clawkit/shared build
+          pnpm --filter @clawkit/cli build
           pnpm --filter @clawkit/controller build
-          pnpm --filter @clawkit/web build
-          pnpm --filter @clawkit/worker build
-          pnpm --filter @clawkit/plugin-core build
-          pnpm --filter @clawkit/market build
-          pnpm --filter @clawkit/pipeline build
       
       - name: 运行测试
         run: pnpm test
